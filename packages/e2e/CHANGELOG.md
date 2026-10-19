@@ -1,5 +1,19 @@
 # e2e
 
+## 0.21.3
+
+### Patch Changes
+
+- [#1219](https://github.com/tester-army/e2e/pull/1219) [`f589a32`](https://github.com/tester-army/e2e/commit/f589a32195bd9c2501f1ce98a118d18afa6da5ec) Thanks [@okwasniewski](https://github.com/okwasniewski)! - Add `onAction` to `agent.act`: a hook that runs after each action once the screen settles, for replayed actions too. Use it to take a screenshot per action.
+
+- [#1218](https://github.com/tester-army/e2e/pull/1218) [`58a5cec`](https://github.com/tester-army/e2e/commit/58a5cec116ca79b1589cb78b6baae40abf3e735a) Thanks [@okwasniewski](https://github.com/okwasniewski)! - Keep screenshots after a secret fill. `app.screenshot()`, `toHaveScreenshot()`, and assertion and failure screenshots no longer stop once a test fills a secret. They mask secure fields only, and `toHaveScreenshot()` still fails when the engine can't prove they are masked. The model still gets no pixels after a fill.
+
+- [#1216](https://github.com/tester-army/e2e/pull/1216) [`19f3ca2`](https://github.com/tester-army/e2e/commit/19f3ca2916cbfdd76589e3c68266a2d16887a041) Thanks [@okwasniewski](https://github.com/okwasniewski)! - The run telemetry event now sorts executed tests by how the replay cache carried them (`tests_code_only`, `tests_replayed`, `tests_assisted`, `tests_live`), counts `agent.act` steps that ran with the cache off (`agent_steps_uncached`), why steps missed the cache or handed off (`agent_miss_reasons`, `agent_handoff_reasons`), and the model calls by agent entry point (`model_calls_act`, `model_calls_assert`, `model_calls_extract`, `model_calls_waitfor`).
+
+- [#1238](https://github.com/tester-army/e2e/pull/1238) [`7b6ac53`](https://github.com/tester-army/e2e/commit/7b6ac5327eb6f98fb51f7e22184fdd5274905e75) Thanks [@okwasniewski](https://github.com/okwasniewski)! - Print a notice after a command when a newer `e2e` is on npm, with the install command for the project's package manager. The registry is checked once a day. Nothing prints in CI or when piped. Set `E2E_UPDATE_CHECK_DISABLED=1` or `NO_UPDATE_NOTIFIER=1` to turn it off. `E2E_TELEMETRY_DISABLED=1` and `DO_NOT_TRACK=1` turn it off too.
+
+- [#1209](https://github.com/tester-army/e2e/pull/1209) [`ef977f4`](https://github.com/tester-army/e2e/commit/ef977f4856da009cac26d78d2e9bb14e5991ee41) Thanks [@knowbody](https://github.com/knowbody)! - Engine disposal receives optional revocable permission to preserve run-owned resources for a replacement worker. Final shutdown, forced termination, and parent disconnect revoke that permission while disposal is pending. Each worker still invokes an engine's disposal hook one time. Missing permission requests final cleanup, including direct and standalone calls.
+
 ## 0.21.2
 
 ### Patch Changes
