@@ -24,7 +24,8 @@ npx e2e explore --session admin 'Explore the admin settings'
 ## What a run does
 
 1. Opens the app: the target's URL, or on a device the pinned app, launched
-   fresh.
+   fresh. Explore installs no build, so a local device target needs
+   `app.bundleId`; an `appPath` alone leaves nothing to launch.
 2. Plans one step: a structured model call reads the goal, the steps and
    findings so far, and the current screen, and answers with a title and a
    concrete charter for one flow, or decides the goal is covered.

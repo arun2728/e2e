@@ -805,7 +805,8 @@ flag, or write `--trace=<mode>` or `--video=<mode>`.
 - The run has one result, under the virtual file `explore`, titled by the
   goal.
 - The exploration opens the app first: the target's `app.url`, or on a device
-  the [pinned app](/mobile#point-at-your-app), launched fresh.
+  the [pinned app](/mobile#point-at-your-app), launched fresh. It installs no
+  build, so a local device target needs `app.bundleId`.
 - With `--session`, the report also holds the setup test's result. It lists
   the project's other tests as skipped with cause `filtered`, as `run` lists
   the tests of a file no positional named.

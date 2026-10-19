@@ -91,8 +91,9 @@ e2e mcp --max-sessions 8 # default: 4
 
 Loads the config, starts the target's app command, boots the engine, starts
 one attempt, and opens the app: its URL when the engine can navigate, or on a
-device the [pinned app](/mobile#point-at-your-app), launched fresh. Returns the
-session id, the catalog, and the first observation.
+device the [pinned app](/mobile#point-at-your-app), launched fresh. It installs
+no build, so a local device target needs `app.bundleId`. Returns the session
+id, the catalog, and the first observation.
 
 ```txt
 open_session {target: "web", headed: true}
