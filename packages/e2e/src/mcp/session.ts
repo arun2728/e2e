@@ -17,6 +17,7 @@ import { loadAiSdkIfInstalled } from '../agent/ai-sdk.ts';
 import { openInteractiveStep, type InteractiveStep } from '../agent/interactive-step.ts';
 import { ScreenPresenter } from '../agent/screen-update.ts';
 import type { ResolvedConfig, ResolvedTarget } from '../config/resolve.ts';
+import { launchesPinnedApp } from '../config/targets.ts';
 import { secretHandle } from '../secrets.ts';
 import { classifyError, ConfigurationError, errorMessage, InfrastructureError, type SerializedError } from '../internal/errors.ts';
 import { LocatorEngine } from '../locator/engine.ts';
@@ -277,6 +278,10 @@ export class SessionHost {
         processes: this.apps,
         notice: (scope, message) => this.log('info', `${scope}: ${message}`),
       });
+      // A device has no URL for the first screen to navigate to, so its
+      // pinned app launches here, as a test's `app.open()` launches it, or
+      // the first observation finds no app open.
+      if (launchesPinnedApp(target)) await attempt.fixtures.app.open();
       // The coding agent is the brain: the step is driven from here, and the
       // configured model stays out of the way.
       const params = this.secretParams(config);
@@ -383,7 +388,7 @@ export class SessionHost {
     }
   }
 
-  /** Opens the app when the engine can navigate, then observes. */
+  /** Opens the app URL when the engine can navigate, then observes; a device's pinned app launched before the step opened. */
   private async firstScreen(live: LiveSession): Promise<string> {
     const base = live.target.app.base?.href;
     if (base !== undefined && live.step.context.target.verbs.has('navigate')) {
@@ -402,8 +407,11 @@ export class SessionHost {
     const lines = [
       `Session ${live.id} open on target "${live.target.name}" (platform ${live.target.platform}, engine ${engine === undefined ? 'none' : `${engine.name} ${engine.version}`}), ${live.headed ? 'headed' : 'headless'}; config ${live.configPath}.`,
     ];
+    const pinned = launchesPinnedApp(live.target) ? (live.target.app.bundleId ?? live.target.app.appPath) : undefined;
     if (live.target.app.base !== undefined) {
       lines.push(`App: ${live.target.app.base.href}.`);
+    } else if (pinned !== undefined) {
+      lines.push(`App: ${pinned}, launched fresh.`);
     }
     if (config.credentials.size > 0) {
       const described = [...config.credentials.values()].map(
@@ -464,7 +472,7 @@ export class SessionHost {
     return defineMcpTool({
       name: 'open_session',
       description:
-        'Open a live session on one target of an e2e project: loads the config, starts the app command the target declares (if any), boots the engine (a browser, a simulator), opens the app URL, and returns the session id, the catalog of tools it can run, and the first observation. Several sessions can be open at once, one per agent, each with its own engine: pass the returned session id to every later call. Then act with call and look with call {tool: "observe"}.',
+        'Open a live session on one target of an e2e project: loads the config, starts the app command the target declares (if any), boots the engine (a browser, a simulator), opens the app (its URL, or the pinned app on a device), and returns the session id, the catalog of tools it can run, and the first observation. Several sessions can be open at once, one per agent, each with its own engine: pass the returned session id to every later call. Then act with call and look with call {tool: "observe"}.',
       inputSchema: z.object({
         target: z.string().min(1).optional().describe('Target name from the config; required when the config declares several'),
         config: z.string().min(1).optional().describe("Path to an e2e config file, relative to the server's directory; default: the nearest e2e.config.ts"),

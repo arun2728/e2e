@@ -61,7 +61,7 @@ tool with the same name, use the `e2e` server's.
 
 | Tool | Does |
 | --- | --- |
-| `open_session` | Loads the config (`config` names another file; default the nearest `e2e.config.ts`), starts the declared app command if any, boots the engine, opens the app URL, and returns the session id, the catalog, and the first observation. `target` is required when the config declares several. `headed: true` shows the browser or simulator when the user wants to watch; without it the session follows the server's `--headed`, headless by default. Each session has its own browser or device. |
+| `open_session` | Loads the config (`config` names another file; default the nearest `e2e.config.ts`), starts the declared app command if any, boots the engine, opens the app (its URL, or launches a device's pinned app), and returns the session id, the catalog, and the first observation. `target` is required when the config declares several. `headed: true` shows the browser or simulator when the user wants to watch; without it the session follows the server's `--headed`, headless by default. Each session has its own browser or device. |
 | `tools` | The catalog: one line per tool with its argument names (`?` marks optional), the first sentence of its description, and `[read-only]` where it changes nothing. `tools {tool}` shows the full description and the JSON Schema of its arguments. |
 | `call` | Runs one catalog tool: `call {tool: "tap", args: {target: "n42"}}`. Arguments are checked against the tool's schema first; a wrong one fails with `INVALID_ARGUMENT` naming the field. |
 | `close_session` | Saves a recording still running, ends the attempt, disposes the engine, stops the app processes the session started once no other session uses them. |

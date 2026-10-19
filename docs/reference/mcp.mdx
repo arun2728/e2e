@@ -90,7 +90,8 @@ e2e mcp --max-sessions 8 # default: 4
 #### `open_session`
 
 Loads the config, starts the target's app command, boots the engine, starts
-one attempt, and opens the app URL when the engine can navigate. Returns the
+one attempt, and opens the app: its URL when the engine can navigate, or on a
+device the [pinned app](/mobile#point-at-your-app), launched fresh. Returns the
 session id, the catalog, and the first observation.
 
 ```txt
