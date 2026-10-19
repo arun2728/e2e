@@ -28,5 +28,8 @@ forms, validation, updated results, and restart. No AI key is needed.
 ## For contributors
 
 Run the suite locally after changes. Update the README's "Last checked"
-versions. CI does not run these examples. Oxlint and fallow exclude them.
+versions. Every example but with-limrun runs nightly on GitHub against the
+packages built from main (`.github/workflows/examples.yml`), and a new
+example needs an entry there. Pull requests never run them. Oxlint and
+fallow exclude them.
 Do not commit lockfiles. Keep the demo and tests consistent across examples.

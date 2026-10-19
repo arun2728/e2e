@@ -167,9 +167,14 @@ suites that consume the built packages the way a user would.
   `with-compose`, `with-kotlin-multiplatform`, `with-flutter`, `with-maui`), each the same
   one-screen greeter demo with deterministic and agent tests. They install
   the published packages from npm, sit outside the pnpm workspace, commit no
-  lockfile, and run in no CI; oxlint and fallow ignore them. A change runs
-  the example's suite by hand and updates the "Last checked" line in its
-  README. A native, Flutter, or .NET MAUI example (SwiftUI, Compose, Kotlin
+  lockfile, and gate no pull request; oxlint and fallow ignore them.
+  `.github/workflows/examples.yml` runs every one but `with-limrun` nightly
+  (23:00 Europe/Warsaw) on each platform it supports, with the packages
+  packed from main swapped in for the npm ones, agent tests included, and
+  posts one Slack message for the run (`scripts/examples-nightly/`, the
+  `SLACK_EXAMPLES_NIGHTLY_WEBHOOK_URL` secret). A new example or platform
+  gets a matrix entry there. A change still runs the example's suite by hand and updates the
+  "Last checked" line in its README. A native, Flutter, or .NET MAUI example (SwiftUI, Compose, Kotlin
   Multiplatform, Flutter, .NET MAUI) keeps its tests in an `e2e/` folder
   beside the native project, as a user would.
 - `docs/` (the Mintlify docs site; pages are the `.mdx` files under `docs/`,
