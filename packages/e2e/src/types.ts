@@ -473,9 +473,17 @@ export interface Screen {
     target: Locator,
     options?: { direction?: ScrollDirection; momentum?: Momentum; timeout?: number },
   ): Promise<void>;
+  /**
+   * Reads the whole screen once, without waiting, as the agent reads it: one
+   * node per line, `#id role "name" text="…" [states]`, children indented,
+   * secrets redacted.
+   */
+  tree(options?: ActionOptions): Promise<string>;
+  /** Prints `tree()` to the test's output. */
+  debug(options?: ActionOptions): Promise<void>;
 }
 
-export interface Locator extends Screen {
+export interface Locator extends Omit<Screen, 'tree' | 'debug'> {
   /** Taps exactly one matching actionable node; with `position`, taps that point of its box once it is in view, with no other actionability check. */
   tap(options?: TapOptions): Promise<void>;
   /** Alias of tap. */

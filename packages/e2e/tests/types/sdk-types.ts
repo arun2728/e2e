@@ -115,6 +115,11 @@ declare const screen: Screen;
 declare const engine: EngineHandle;
 declare const targets: readonly Target[];
 
+void (screen.tree() satisfies Promise<string>);
+void (screen.debug({ timeout: 1000 }) satisfies Promise<void>);
+// @ts-expect-error tree reads the whole screen; a locator does not scope it
+void screen.getByRole('list').tree();
+
 declare const cleanupContext: EngineCleanupContext;
 declare const disposeContext: EngineDisposeContext;
 cleanupContext satisfies EngineDisposeContext;

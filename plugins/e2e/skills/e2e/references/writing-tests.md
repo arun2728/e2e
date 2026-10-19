@@ -235,6 +235,11 @@ within `actionTimeout`, else `LOCATOR_NOT_FOUND`. For a value that has to
 settle use `expect`, not a read. Reading a password field's value or
 attributes is `POLICY_DENIED`, as is `toHaveAttribute` on one, negated too.
 
+`screen.tree()` returns the whole screen as the agent reads it (one node
+per line, secrets redacted) and `screen.debug()` prints it to the test's
+output. Both read once without waiting; on a locator or a frame they are
+`INVALID_ARGUMENT`.
+
 ## expect
 
 `expect(locator)` polls up to `config.assertionTimeout` (5 s) or
