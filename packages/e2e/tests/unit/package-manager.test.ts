@@ -54,6 +54,7 @@ describe('detectWorkspacePackageManager', () => {
   it.each([
     ['an unindented block list', 'packages:\n- apps/*\n- "!apps/legacy"\n'],
     ['a flow list', "packages: ['apps/*', \"!apps/legacy\"] # every app\n"],
+    ['a flow list over several lines', "packages: [\n  'apps/*', # every app\n  \"!apps/legacy\",\n]\ncatalog:\n  react: ^19.0.0\n"],
   ])('reads the packages of %s', (_form, yaml) => {
     writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), yaml);
     const member = path.join(dir, 'apps', 'web');

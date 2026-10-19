@@ -128,9 +128,9 @@ own tools count together as `tool`, and any other name as `other`.
 | `result` | `upgraded`, `up-to-date`, `dry-run`, `no-project`, `invalid-project`, `linked`, `unknown-target`, `incompatible`, `registry-failed`, or `install-failed` |
 | `target` | `version` for a named version, else the dist-tag: `latest`, `nightly`, `canary`, `beta`, or `other` |
 | `from_version`, `to_version`, `prerelease` | The `e2e` version installed before, the one the target resolved to, and whether that one is a prerelease. `null` when unknown |
-| `manager` | The package manager that installed: `npm`, `pnpm`, `yarn`, or `bun` |
-| `siblings` | The `@e2e-dev` packages the project lists, without the scope: `["web", "kernel"]` |
-| `packages_moved`, `packages_linked` | How many packages the install changed, and how many were left alone because a workspace, a path, or git provides them |
+| `manager` | The package manager the command picked for the project: `npm`, `pnpm`, `yarn`, or `bun`. It installs only on `upgraded`. `null` when the command stopped before picking one |
+| `siblings` | The `@e2e-dev` packages in the upgrade plan, without the scope: `["web", "kernel"]`. Linked packages and ones the registry doesn't have are left out |
+| `packages_moved`, `packages_linked` | How many `e2e` and `@e2e-dev` entries in `package.json` the upgrade rewrote, and how many it left alone because they aren't registry versions (`workspace:`, `file:`, `catalog:`, a path, git, an alias). Not the lockfile's package count |
 
 </Accordion>
 <Accordion title="e2e_run_completed, once per e2e run, e2e explore, or completed run()">

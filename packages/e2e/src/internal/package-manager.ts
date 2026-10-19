@@ -85,11 +85,12 @@ function invokingManager(env: NodeJS.ProcessEnv): PackageManager {
 
 /** The manager `dir` names itself: its `packageManager` field, else its lockfile. */
 function managerAt(dir: string): PackageManager | undefined {
-  const field = readManifest(dir)?.['packageManager'];
+  const field = readPackageManifest(dir)?.['packageManager'];
   return fieldManager(typeof field === 'string' ? field : undefined) ?? lockfileManager(dir);
 }
 
-function readManifest(dir: string): Record<string, unknown> | undefined {
+/** The package.json in `dir` as an object, or undefined when it is missing or not one. */
+export function readPackageManifest(dir: string): Record<string, unknown> | undefined {
   try {
     const manifest: unknown = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
     return isPlainObject(manifest) ? manifest : undefined;
@@ -110,7 +111,7 @@ function workspaceGlobs(dir: string): { globs: string[]; manager: PackageManager
   } catch {
     // No pnpm workspace here; the manifest may declare one.
   }
-  const field = readManifest(dir)?.['workspaces'];
+  const field = readPackageManifest(dir)?.['workspaces'];
   const list = Array.isArray(field) ? field : typeof field === 'object' && field !== null && 'packages' in field ? field.packages : undefined;
   if (!Array.isArray(list)) return undefined;
   return { globs: list.filter((glob): glob is string => typeof glob === 'string'), manager: undefined };
@@ -119,15 +120,15 @@ function workspaceGlobs(dir: string): { globs: string[]; manager: PackageManager
 /**
  * The entries of the top-level `packages:` list in a pnpm-workspace.yaml,
  * without reading the rest of the YAML: a block list, indented or not, or a
- * one-line flow list (`packages: ['apps/*']`).
+ * flow list on one line or several (`packages: ['apps/*']`).
  */
 function pnpmWorkspacePackages(text: string): string[] {
   const unquote = (value: string): string => value.trim().replace(/^(['"])(.*)\1$/u, '$2');
+  const flow = /^packages:[ \t]*\[([^\]]*)\]/mu.exec(text.replace(/[ \t]+#.*$/gmu, ''));
+  if (flow !== null) return flow[1]!.split(',').map(unquote).filter((glob) => glob !== '');
   const globs: string[] = [];
   let inside = false;
   for (const line of text.split(/\r?\n/u)) {
-    const flow = /^packages:\s*\[(.*)\]\s*(?:#.*)?$/u.exec(line);
-    if (flow !== null) return flow[1]!.split(',').map(unquote).filter((glob) => glob !== '');
     if (/^packages:\s*(?:#.*)?$/u.test(line)) {
       inside = true;
       continue;

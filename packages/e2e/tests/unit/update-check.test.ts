@@ -106,6 +106,19 @@ describe('update check', () => {
       'npm exec -- e2e upgrade',
     ],
     [
+      'a package nested in the project that lists e2e',
+      (root) => {
+        writeFileSync(path.join(root, 'package.json'), JSON.stringify({ devDependencies: { e2e: '^0.21.2' } }));
+        writeFileSync(path.join(root, 'pnpm-lock.yaml'), '');
+        const tool = path.join(root, 'tools', 'codegen');
+        mkdirSync(tool, { recursive: true });
+        writeFileSync(path.join(tool, 'package.json'), '{}');
+        writeFileSync(path.join(tool, 'package-lock.json'), '{}');
+        return tool;
+      },
+      'pnpm exec e2e upgrade',
+    ],
+    [
       'a directory inside a project',
       (root) => {
         writeFileSync(path.join(root, 'package.json'), '{}');

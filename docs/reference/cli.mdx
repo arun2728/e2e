@@ -957,7 +957,7 @@ exit 2 and say so.
 #### `e2e upgrade`
 
 Upgrades `e2e` to the latest release, a dist-tag, or one version. It also
-moves every `@e2e-dev/*` package in the same `package.json`, and installs
+moves the `@e2e-dev/*` packages in the same `package.json`, and installs
 them with the project's package manager. `e2e update` is the same command.
 
 <Note>
@@ -1009,8 +1009,9 @@ Release notes: https://github.com/tester-army/e2e/releases/tag/e2e%400.21.2
 - **The project.** The nearest `package.json` from the working directory up
   that lists `e2e`.
 - **Sibling versions.** Each `@e2e-dev/*` package gets its release under the
-  same dist-tag, when that release's peer ranges accept the new versions.
-  Otherwise it gets its newest release that does. A deprecated release is
+  same dist-tag (`latest` for a named version), when that release's peer
+  ranges accept the new versions. Otherwise it gets its newest release that
+  does. When none does, the command exits 2. A deprecated release is
   never picked, and a prerelease only when `e2e` gets one. An integration
   follows the engine it plugs into.
 - **The package manager.** The one the project's lockfile or
@@ -1027,8 +1028,8 @@ Release notes: https://github.com/tester-army/e2e/releases/tag/e2e%400.21.2
 - **The saved range.** A named version or a prerelease is pinned exactly. A
   dist-tag keeps the `^` or `~` of the old spec.
 - **Left alone.** A package linked with `workspace:`, `file:`, `link:`,
-  `catalog:`, a path, or a git URL. When `e2e` itself is one, the command
-  exits 2.
+  `catalog:`, a path, or a git URL, and an `@e2e-dev/*` package the registry
+  doesn't have. When `e2e` itself is linked, the command exits 2.
 - **Nothing to do.** When every installed version already matches, the
   command installs nothing. Without `node_modules`, as under Yarn
   Plug'n'Play, it compares the specs in `package.json` instead.

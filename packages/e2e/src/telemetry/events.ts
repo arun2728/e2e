@@ -175,7 +175,7 @@ export function upgradeCompletedEvent(outcome: UpgradeOutcome): TelemetryEvent {
       target: outcome.target === 'version' || UPGRADE_TAGS.has(outcome.target) ? outcome.target : 'other',
       from_version: from,
       to_version: to,
-      prerelease: to === null ? null : to.includes('-'),
+      prerelease: to === null ? null : to.split('+')[0]!.includes('-'),
       manager: outcome.manager === null ? null : plainToken(outcome.manager),
       siblings: unique(outcome.siblings.map((name) => (name.startsWith(SIBLING_SCOPE) ? plainToken(name.slice(SIBLING_SCOPE.length)) : 'other'))),
       packages_moved: outcome.moved,

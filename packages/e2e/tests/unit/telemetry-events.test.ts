@@ -115,6 +115,8 @@ describe('telemetry events', () => {
       upgradeCompletedEvent({ ...outcome, result: 'unknown-target', target: 'my-team/secret', fromVersion: 'workspace:*', toVersion: null, siblings: ['@acme/web'] }).properties,
     ).toMatchObject({ target: 'other', from_version: null, to_version: null, prerelease: null, siblings: ['other'] });
     expect(upgradeCompletedEvent({ ...outcome, target: 'version', toVersion: '0.21.2' }).properties).toMatchObject({ target: 'version', prerelease: false });
+    // Build metadata after `+` is not a prerelease, hyphens and all.
+    expect(upgradeCompletedEvent({ ...outcome, toVersion: '0.22.0+ci-build' }).properties).toMatchObject({ prerelease: false });
   });
 
   it("the run event is the report's numbers, with project vocabulary folded", () => {

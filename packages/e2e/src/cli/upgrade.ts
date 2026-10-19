@@ -49,7 +49,7 @@ const REGISTRY_TIMEOUT_MS = 15_000;
 const SECTIONS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
 type Section = (typeof SECTIONS)[number];
 /** Specs that do not name a registry version: a workspace, a path, a git or tarball URL, an alias, a pnpm catalog. */
-const NON_REGISTRY_SPEC = /^(?:workspace|link|file|portal|patch|catalog|npm|git|git\+[a-z]+|github|gitlab|bitbucket|https?):|\//u;
+const NON_REGISTRY_SPEC = /^(?:workspace|link|file|portal|patch|catalog|npm|git|git\+[a-z]+|github|gitlab|bitbucket|https?):|[/\\]/u;
 const DIST_TAG = /^[a-z][a-z0-9._-]*$/iu;
 
 /**
@@ -346,7 +346,28 @@ function resolveSiblings(
     }
     pending = pending.filter((entry) => !batch.includes(entry));
   }
+  // A batch of mutual peers was picked against an incomplete plan; the whole plan has to hold.
+  for (const name of planned) {
+    const peer = unmetPeer(packuments.get(name)!.versions[chosen.get(name)!], chosen);
+    if (peer !== undefined) {
+      throw new UpgradeError(`no ${name} release fits the rest of the upgrade: ${name} ${chosen.get(name)} needs ${peer.name} ${peer.range}, and the upgrade picks ${peer.name} ${chosen.get(peer.name)}`, 'incompatible', 2);
+    }
+  }
   return chosen;
+}
+
+/** The first peer range of `manifest` that a version in `chosen` misses; peers outside the plan are not checked. */
+function unmetPeer(
+  manifest: Packument['versions'][string] | undefined,
+  chosen: ReadonlyMap<string, string>,
+): { name: string; range: string } | undefined {
+  for (const [name, range] of Object.entries(manifest?.peerDependencies ?? {})) {
+    const version = chosen.get(name);
+    if (version === undefined) continue;
+    const parsed = parseVersion(version);
+    if (parsed === undefined || !satisfies(parsed, range)) return { name, range };
+  }
+  return undefined;
 }
 
 /** Every peer any version of the package names. */
@@ -357,12 +378,7 @@ function peerNames(packument: Packument): string[] {
 function pickSibling(name: string, packument: Packument, target: UpgradeTarget, chosen: ReadonlyMap<string, string>, allowPrerelease: boolean): string {
   const fits = (version: string): boolean => {
     const manifest = packument.versions[version];
-    if (manifest === undefined || manifest.deprecated !== undefined) return false;
-    return Object.entries(manifest.peerDependencies ?? {}).every(([peer, range]) => {
-      const peerVersion = chosen.get(peer);
-      const parsed = peerVersion === undefined ? undefined : parseVersion(peerVersion);
-      return peerVersion === undefined || (parsed !== undefined && satisfies(parsed, range));
-    });
+    return manifest !== undefined && manifest.deprecated === undefined && unmetPeer(manifest, chosen) === undefined;
   };
   const tagged = packument['dist-tags'][target.kind === 'tag' ? target.tag : 'latest'];
   if (tagged !== undefined && fits(tagged) && (allowPrerelease || parseVersion(tagged)?.prerelease.length === 0)) return tagged;
@@ -414,12 +430,16 @@ function describeChange(entry: Planned): string {
   return `${from} → ${picocolors.bold(entry.version)}${downgrade ? picocolors.yellow(' (downgrade)') : ''}`;
 }
 
-/** The manifest with each moving package's spec set to its request, in the section it was in. */
+/**
+ * The manifest with each moving package's spec set to its request in every
+ * section that lists it: a package in both `dependencies` and
+ * `optionalDependencies` is installed from the one its manager prefers.
+ */
 function withRequests(manifest: Manifest, entries: readonly Planned[]): Manifest {
   const sections = SECTIONS.flatMap((section) => {
     const block = manifest[section];
     if (block === undefined) return [];
-    const moved = entries.filter((entry) => entry.section === section).map((entry) => [entry.name, entry.request] as const);
+    const moved = entries.filter((entry) => block[entry.name] !== undefined).map((entry) => [entry.name, entry.request] as const);
     return [[section, { ...block, ...Object.fromEntries(moved) }] as const];
   });
   return { ...manifest, ...Object.fromEntries(sections) };
@@ -461,25 +481,26 @@ async function whileIgnoringSignals<T>(install: () => T): Promise<{ result: T; i
 }
 
 /** Every lockfile in `dirs` as it is now, absent ones included, so a failed install can put them back. */
-function snapshotLockfiles(dirs: readonly string[]): Map<string, string | undefined> {
-  const snapshot = new Map<string, string | undefined>();
+function snapshotLockfiles(dirs: readonly string[]): Map<string, Buffer | undefined> {
+  const snapshot = new Map<string, Buffer | undefined>();
   for (const dir of new Set(dirs)) {
     for (const name of LOCKFILE_NAMES) {
       const file = path.join(dir, name);
-      snapshot.set(file, existsSync(file) ? readFileSync(file, 'utf8') : undefined);
+      // Bytes, not text: `bun.lockb` is binary.
+      snapshot.set(file, existsSync(file) ? readFileSync(file) : undefined);
     }
   }
   return snapshot;
 }
 
 /** Puts back every lockfile the install changed, created, or removed; returns their paths. */
-function restoreLockfiles(snapshot: ReadonlyMap<string, string | undefined>): string[] {
+function restoreLockfiles(snapshot: ReadonlyMap<string, Buffer | undefined>): string[] {
   const restored: string[] = [];
   for (const [file, before] of snapshot) {
-    const now = existsSync(file) ? readFileSync(file, 'utf8') : undefined;
-    if (now === before) continue;
+    const now = existsSync(file) ? readFileSync(file) : undefined;
+    if (now === undefined ? before === undefined : before !== undefined && now.equals(before)) continue;
     if (before === undefined) rmSync(file, { force: true });
-    else writeFileSync(file, before, 'utf8');
+    else writeFileSync(file, before);
     restored.push(file);
   }
   return restored;

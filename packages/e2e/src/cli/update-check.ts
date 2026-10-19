@@ -8,13 +8,13 @@
  * or one of the telemetry opt-outs set: the request is not needed to run.
  */
 
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import picocolors from 'picocolors';
 import { isCiMode } from '../config/resolve.ts';
 import { writeFileAtomicSync } from '../internal/atomic-write.ts';
 import { envFlag } from '../internal/env.ts';
-import { detectWorkspacePackageManager, execCommand } from '../internal/package-manager.ts';
+import { detectWorkspacePackageManager, execCommand, readPackageManifest } from '../internal/package-manager.ts';
 import { isPlainObject } from '../internal/options.ts';
 import { isRelease, latestRelease, olderThan } from '../internal/release.ts';
 import { telemetryConfigDir } from '../telemetry/store.ts';
@@ -67,16 +67,24 @@ function readRecord(filePath: string): CheckRecord | undefined {
 }
 
 /**
- * `e2e upgrade`, run through the package manager of the nearest package at
- * or above `cwd` (its workspace's, for a workspace member), which moves the
- * `@e2e-dev/*` packages along with e2e.
+ * `e2e upgrade`, run through the package manager of the package it would
+ * upgrade: the nearest one at or above `cwd` that lists e2e, else the nearest
+ * one (its workspace's manager, for a workspace member).
  */
 function upgradeCommand(cwd: string, env: NodeJS.ProcessEnv): string {
-  let dir = cwd;
-  while (!existsSync(path.join(dir, 'package.json')) && path.dirname(dir) !== dir) dir = path.dirname(dir);
-  const project = existsSync(path.join(dir, 'package.json')) ? dir : cwd;
-  return execCommand(detectWorkspacePackageManager(project, env).manager, 'e2e upgrade');
+  let nearest: string | undefined;
+  let project: string | undefined;
+  for (let dir = cwd; project === undefined; dir = path.dirname(dir)) {
+    const manifest = readPackageManifest(dir);
+    if (manifest !== undefined) nearest ??= dir;
+    if (manifest !== undefined && DEPENDENCY_SECTIONS.some((section) => isPlainObject(manifest[section]) && manifest[section]['e2e'] !== undefined)) project = dir;
+    if (path.dirname(dir) === dir) break;
+  }
+  return execCommand(detectWorkspacePackageManager(project ?? nearest ?? cwd, env).manager, 'e2e upgrade');
 }
+
+const DEPENDENCY_SECTIONS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
+
 
 export class UpdateCheck {
   private readonly options: UpdateCheckOptions;

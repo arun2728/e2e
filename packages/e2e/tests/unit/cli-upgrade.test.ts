@@ -322,9 +322,57 @@ describe('e2e upgrade', () => {
   });
 
   it('lets Yarn Berry change its lockfile in CI', async () => {
-    project({ devDependencies: { e2e: '^0.20.0' } });
-    expect((await run(undefined, { env: { CI: 'true' } })).exitCode).toBe(0);
+    rmSync(path.join(dir, 'package-lock.json'));
+    project({ packageManager: 'yarn@4.9.2', devDependencies: { e2e: '^0.20.0' } });
+    writeFileSync(path.join(dir, 'yarn.lock'), '__metadata:\n  version: 8\n');
+    expect(await run(undefined, { env: { CI: 'true' } })).toMatchObject({ exitCode: 0, manager: 'yarn' });
+    expect(commands()).toEqual(['yarn install']);
     expect(spawnMock.mock.calls[0]?.[3]).toMatchObject({ CI: 'true', YARN_ENABLE_IMMUTABLE_INSTALLS: 'false' });
+  });
+
+  it('puts a binary lockfile back byte for byte', async () => {
+    rmSync(path.join(dir, 'package-lock.json'));
+    project({ devDependencies: { e2e: '^0.20.0' } });
+    // Bytes that are not UTF-8: a text round trip would turn them into replacement characters.
+    const lockb = Buffer.from([0x23, 0x21, 0xff, 0xfe, 0x00, 0xc3, 0x28, 0x80]);
+    writeFileSync(path.join(dir, 'bun.lockb'), lockb);
+    spawnMock.mockImplementation((_command, _args, cwd) => {
+      writeFileSync(path.join(cwd, 'bun.lockb'), Buffer.from([0x01]));
+      return { status: 1, signal: null };
+    });
+    expect((await run()).exitCode).toBe(2);
+    expect(readFileSync(path.join(dir, 'bun.lockb')).equals(lockb)).toBe(true);
+  });
+
+  it('rewrites a package in every section that lists it', async () => {
+    project({ dependencies: { '@e2e-dev/web': '^0.14.0' }, optionalDependencies: { '@e2e-dev/web': '^0.14.0' }, devDependencies: { e2e: '^0.20.0' } });
+    expect((await run()).exitCode).toBe(0);
+    expect(sections()).toEqual({
+      dependencies: { '@e2e-dev/web': '^0.15.2' },
+      devDependencies: { e2e: '^0.21.2' },
+      optionalDependencies: { '@e2e-dev/web': '^0.15.2' },
+    });
+  });
+
+  it('leaves a Windows path spec alone', async () => {
+    project({ devDependencies: { e2e: '^0.20.0', '@e2e-dev/web': '..\\web' } });
+    expect((await run()).exitCode).toBe(0);
+    expect(sections()['devDependencies']).toEqual({ e2e: '^0.21.2', '@e2e-dev/web': '..\\web' });
+  });
+
+  it('exits 2 when siblings that peer on each other cannot agree', async () => {
+    // Each waits on the other, so both are first picked against e2e alone; the plan as a whole must then hold.
+    REGISTRY['@e2e-dev/left'] = { tags: { latest: '1.0.0' }, versions: { '1.0.0': { e2e: '>=0.15.0 <1', '@e2e-dev/right': '>=2.0.0 <3' } } };
+    REGISTRY['@e2e-dev/right'] = { tags: { latest: '1.0.0' }, versions: { '1.0.0': { e2e: '>=0.15.0 <1', '@e2e-dev/left': '>=1.0.0 <2' } } };
+    try {
+      project({ devDependencies: { e2e: '^0.20.0', '@e2e-dev/left': '^1.0.0', '@e2e-dev/right': '^1.0.0' } });
+      expect(await run()).toMatchObject({ exitCode: 2, result: 'incompatible' });
+    } finally {
+      delete REGISTRY['@e2e-dev/left'];
+      delete REGISTRY['@e2e-dev/right'];
+    }
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(written(stderrSpy)).toBe('e2e upgrade: no @e2e-dev/left release fits the rest of the upgrade: @e2e-dev/left 1.0.0 needs @e2e-dev/right >=2.0.0 <3, and the upgrade picks @e2e-dev/right 1.0.0\n');
   });
 
   it("compares specs where node_modules holds nothing, as under Yarn Plug'n'Play", async () => {
