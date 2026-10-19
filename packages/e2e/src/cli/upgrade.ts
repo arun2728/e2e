@@ -278,7 +278,7 @@ function registryUrl(env: NodeJS.ProcessEnv): string {
 
 /** The package's abbreviated metadata, or undefined when the registry has no such package. */
 async function fetchPackument(registry: string, name: string, fetchImpl: typeof fetch): Promise<Packument | undefined> {
-  const url = `${registry}${name.replace('/', '%2f')}`;
+  const url = `${registry}${name.replaceAll('/', '%2f')}`;
   let response: Response;
   try {
     response = await fetchImpl(url, {
