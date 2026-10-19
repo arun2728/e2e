@@ -38,11 +38,11 @@ function readReport(path: string): ReportCounts | undefined {
   };
 }
 
-/** The run's jobs by name, with their log URLs; empty when the API cannot be read. */
-async function listJobs(): Promise<Map<string, string>> {
+/** The run's jobs by name, with their log URLs; undefined when the API cannot be read. */
+async function listJobs(): Promise<Map<string, string> | undefined> {
   const { GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT } = process.env;
+  if (!GITHUB_TOKEN || !GITHUB_REPOSITORY || !GITHUB_RUN_ID) return undefined;
   const jobs = new Map<string, string>();
-  if (!GITHUB_TOKEN || !GITHUB_REPOSITORY || !GITHUB_RUN_ID) return jobs;
   const url = `https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT ?? '1'}/jobs?per_page=100`;
   try {
     const response = await fetch(url, {
@@ -53,6 +53,7 @@ async function listJobs(): Promise<Map<string, string>> {
     for (const job of body.jobs) jobs.set(job.name, job.html_url);
   } catch (error) {
     process.stderr.write(`::warning::could not list the run's jobs: ${String(error)}\n`);
+    return undefined;
   }
   return jobs;
 }
@@ -78,11 +79,11 @@ for (const entry of existsSync(dir) ? readdirSync(dir) : []) {
   if (!existsSync(outcomePath)) continue;
   const outcome = JSON.parse(readFileSync(outcomePath, 'utf8')) as Outcome;
   const report = readReport(join(dir, entry, 'report.json'));
-  const jobUrl = jobs.get(outcome.job);
+  const jobUrl = jobs?.get(outcome.job);
   rows.push({ outcome, ...(report === undefined ? {} : { report }), ...(jobUrl === undefined ? {} : { jobUrl }) });
 }
 const reported = new Set(rows.map((row) => row.outcome.job));
-const missing = [...jobs.keys()].filter((name) => MATRIX_JOB.test(name) && !reported.has(name));
+const missing = [...(jobs?.keys() ?? [])].filter((name) => MATRIX_JOB.test(name) && !reported.has(name));
 
 const blocked = packBlocked();
 const server = process.env.GITHUB_SERVER_URL ?? 'https://github.com';
@@ -91,6 +92,7 @@ const message = formatMessage(rows, {
   sha: process.env.GITHUB_SHA ?? 'unknown',
   ...(blocked === undefined ? {} : { blocked }),
   missing,
+  jobsUnknown: jobs === undefined,
 });
 process.stdout.write(`${message}\n`);
 

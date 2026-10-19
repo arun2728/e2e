@@ -45,6 +45,8 @@ export interface RunInfo {
   blocked?: 'credential' | 'pack';
   /** Jobs that ended without writing an outcome (a runner lost mid-job). */
   missing?: string[];
+  /** Set when the run's jobs could not be listed, so `missing` may be incomplete. */
+  jobsUnknown?: boolean;
 }
 
 type Verdict = 'passed' | 'flaky' | 'failed' | 'cancelled';
@@ -117,6 +119,9 @@ export function formatMessage(rows: readonly Row[], run: RunInfo): string {
   const missing = run.missing ?? [];
   const total = judged.length + missing.length;
   const bad = failed + missing.length;
+  if (total === 0) {
+    return `❌ *Nightly examples*: no example reported a result on ${commit}. ${link}`;
+  }
 
   const headline =
     bad > 0
@@ -128,5 +133,6 @@ export function formatMessage(rows: readonly Row[], run: RunInfo): string {
     return `${ICON[verdict]} ${label}: ${escape(detail)}${log}`;
   });
   for (const job of missing) lines.push(`❌ *${escape(job)}*: the job ended without a result`);
+  if (run.jobsUnknown) lines.push('⚠️ Could not list the run\'s jobs, so a job that ended without a result is not shown.');
   return [`${headline} on ${commit}. ${link}`, '', ...lines].join('\n');
 }

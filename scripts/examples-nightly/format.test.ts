@@ -51,3 +51,12 @@ test('a run that never reached the examples says why', () => {
   assert.match(formatMessage([], { ...run, blocked: 'pack' }), /building the packages from `main@abcdef1` failed/);
   assert.match(formatMessage([], { ...run, blocked: 'credential' }), /the AI_GATEWAY_API_KEY secret is missing/);
 });
+
+test('a run with no result at all is not green', () => {
+  assert.match(formatMessage([], run), /^❌ \*Nightly examples\*: no example reported a result/);
+});
+
+test('a run whose jobs could not be listed says a missing job may be hidden', () => {
+  const message = formatMessage([{ outcome: outcome(), report: report() }], { ...run, jobsUnknown: true });
+  assert.match(message, /Could not list the run's jobs/);
+});
