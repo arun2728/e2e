@@ -2,13 +2,13 @@
  * `e2e upgrade` (alias `update`): moves the project's `e2e` to the latest
  * release, a dist-tag, or one version, and every `@e2e-dev/*` package the
  * project declares along with it, each to the newest release whose peer
- * ranges accept the new versions. The project's package manager installs
- * them, so its lockfile, its workspace, and the section each package sits in
- * stay its own.
+ * ranges accept the new versions. The new specs go into package.json, each
+ * in the section it was in, and one install with the project's package
+ * manager resolves them, so its lockfile and its workspace stay its own.
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { InvalidArgumentError } from 'commander';
 import picocolors from 'picocolors';
@@ -17,7 +17,7 @@ import { detectWorkspacePackageManager, execCommand, type PackageManager } from 
 import { compareVersions, formatVersion, parseVersion, satisfies } from '../internal/semver.ts';
 import type { UpgradeOutcome, UpgradeResult } from '../telemetry/events.ts';
 import { findInstalledSkillDirs } from './init/agent-skill.ts';
-import { describeManifestError, readPackage } from './init/package.ts';
+import { describeManifestError, readPackage, serializePackage } from './init/package.ts';
 
 /** What to upgrade to: a dist-tag such as `latest` or `nightly`, or one published version. */
 export type UpgradeTarget = { readonly kind: 'tag'; readonly tag: string } | { readonly kind: 'version'; readonly version: string };
@@ -88,7 +88,7 @@ interface Declared {
 
 interface Planned extends Declared {
   readonly version: string;
-  /** What the package manager is asked for: the version, with the range operator the old spec had. */
+  /** The spec written to package.json: the version, with the range operator the old spec had. */
   readonly request: string;
 }
 
@@ -178,18 +178,21 @@ async function upgradeOrThrow(options: UpgradeOptions, facts: UpgradeFacts): Pro
   out(`${options.dryRun === true ? 'Would upgrade' : 'Upgrading'}${where} with ${manager}:`);
   const width = Math.max(...plan.map((entry) => entry.name.length));
   for (const entry of plan) out(`  ${entry.name.padEnd(width)}  ${describeChange(entry)}`);
-  const commands = installCommands(manager, changing, existsSync(path.join(project.dir, 'pnpm-workspace.yaml')));
-  for (const args of commands) out(picocolors.dim(`$ ${manager} ${args.join(' ')}`));
+  const manifestName = relative(cwd, project.manifestPath);
+  const args = installArgs(manager);
+  out(picocolors.dim(`${manifestName}: ${changing.map((entry) => `"${entry.name}": "${entry.request}"`).join(', ')}`));
+  out(picocolors.dim(`$ ${manager} ${args.join(' ')}`));
   if (options.dryRun === true) return { result: 'dry-run', exitCode: 0 };
 
-  const spawn = options.spawn ?? spawnInstall;
-  for (const args of commands) {
-    const result = spawn(manager, args, project.dir);
-    if (result.error !== undefined || result.status !== 0) {
-      const reason = result.error?.message ?? `exit ${result.status ?? result.signal}`;
-      process.stderr.write(`e2e upgrade: ${manager} failed (${reason}); retry with ${manager} ${args.join(' ')}\n`);
-      return { result: 'install-failed', exitCode: result.signal === 'SIGINT' ? 130 : 2 };
-    }
+  // The new specs go into package.json and one install resolves them together:
+  // an add command per package would meet the old e2e spec in npm's peer check.
+  writeFileSync(project.manifestPath, serializePackage(withRequests(project.manifest, changing), project.original), 'utf8');
+  const result = (options.spawn ?? spawnInstall)(manager, args, project.dir);
+  if (result.error !== undefined || result.status !== 0) {
+    writeFileSync(project.manifestPath, project.original, 'utf8');
+    const reason = result.error?.message ?? `exit ${result.status ?? result.signal}`;
+    process.stderr.write(`e2e upgrade: ${manager} ${args.join(' ')} failed (${reason}); ${manifestName} is back as it was\n`);
+    return { result: 'install-failed', exitCode: result.signal === 'SIGINT' ? 130 : 2 };
   }
   facts.moved = changing.length;
 
@@ -205,18 +208,23 @@ async function upgradeOrThrow(options: UpgradeOptions, facts: UpgradeFacts): Pro
   return { result: 'upgraded', exitCode: 0 };
 }
 
-/** The nearest package.json from `cwd` up that declares `e2e`. */
-function findProject(cwd: string): { dir: string; manifestPath: string; manifest: ReturnType<typeof readPackage>['manifest'] } {
+type Manifest = ReturnType<typeof readPackage>['manifest'];
+
+/** The nearest package.json from `cwd` up that declares `e2e`, with its text as read. */
+function findProject(cwd: string): { dir: string; manifestPath: string; manifest: Manifest; original: string } {
   for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
     const manifestPath = path.join(dir, 'package.json');
     if (existsSync(manifestPath)) {
-      let manifest: ReturnType<typeof readPackage>['manifest'];
+      let read: ReturnType<typeof readPackage>;
       try {
-        ({ manifest } = readPackage(dir));
+        read = readPackage(dir);
       } catch (cause) {
         throw new UpgradeError(`${relative(cwd, manifestPath)} could not be read: ${describeManifestError(cause)}`, 'invalid-project', 2);
       }
-      if (SECTIONS.some((section) => manifest[section]?.[RUNNER] !== undefined)) return { dir, manifestPath, manifest };
+      const { manifest, original } = read;
+      if (original !== undefined && SECTIONS.some((section) => manifest[section]?.[RUNNER] !== undefined)) {
+        return { dir, manifestPath, manifest, original };
+      }
     }
     if (path.dirname(dir) === dir) break;
   }
@@ -224,7 +232,7 @@ function findProject(cwd: string): { dir: string; manifestPath: string; manifest
 }
 
 /** `e2e` and the `@e2e-dev/*` packages the manifest installs, split by whether their spec names a registry version. */
-function declaredPackages(dir: string, manifest: ReturnType<typeof readPackage>['manifest']): { declared: Declared[]; linked: Declared[] } {
+function declaredPackages(dir: string, manifest: Manifest): { declared: Declared[]; linked: Declared[] } {
   const seen = new Set<string>();
   const all: Declared[] = [];
   for (const section of SECTIONS) {
@@ -369,7 +377,7 @@ function pickSibling(name: string, packument: Packument, target: UpgradeTarget, 
 }
 
 /**
- * What to ask the package manager for. A named version or a prerelease is
+ * The spec to write to package.json. A named version or a prerelease is
  * pinned exactly; a dist-tag keeps the operator of the old spec (`^`, `~`, or
  * none for an exact pin), `^` for any other range.
  */
@@ -390,41 +398,23 @@ function describeChange(entry: Planned): string {
   return `${from} → ${picocolors.bold(entry.version)}${downgrade ? picocolors.yellow(' (downgrade)') : ''}`;
 }
 
-/**
- * One add command per section, so every package stays in its section and the
- * packages of one section move together, which keeps npm's peer check from
- * failing between them. The command pins exactly when every request in it is
- * an exact version: npm would otherwise save one with a `^`, and its exact
- * flag would flatten a `^` request into a pin too.
- */
-function installCommands(manager: PackageManager, entries: readonly Planned[], workspaceRoot: boolean): string[][] {
-  return SECTIONS.flatMap((section) => {
-    const group = entries.filter((entry) => entry.section === section);
-    if (group.length === 0) return [];
-    const exact = group.every((entry) => parseVersion(entry.request) !== undefined);
-    return [[...addArgs(manager, section, exact, workspaceRoot), ...group.map((entry) => `${entry.name}@${entry.request}`)]];
+/** The manifest with each moving package's spec set to its request, in the section it was in. */
+function withRequests(manifest: Manifest, entries: readonly Planned[]): Manifest {
+  const sections = SECTIONS.flatMap((section) => {
+    const block = manifest[section];
+    if (block === undefined) return [];
+    const moved = entries.filter((entry) => entry.section === section).map((entry) => [entry.name, entry.request] as const);
+    return [[section, { ...block, ...Object.fromEntries(moved) }] as const];
   });
+  return { ...manifest, ...Object.fromEntries(sections) };
 }
 
-function addArgs(manager: PackageManager, section: Section, exact: boolean, workspaceRoot: boolean): string[] {
-  switch (manager) {
-    case 'npm':
-      return ['install', { dependencies: '--save-prod', devDependencies: '--save-dev', optionalDependencies: '--save-optional' }[section], ...(exact ? ['--save-exact'] : [])];
-    case 'pnpm':
-      return [
-        'add',
-        { dependencies: '--save-prod', devDependencies: '--save-dev', optionalDependencies: '--save-optional' }[section],
-        ...(exact ? ['--save-exact'] : []),
-        ...(workspaceRoot ? ['--workspace-root'] : []),
-      ];
-    case 'yarn':
-    case 'bun':
-      return [
-        'add',
-        ...({ dependencies: [], devDependencies: ['--dev'], optionalDependencies: ['--optional'] }[section]),
-        ...(exact ? ['--exact'] : []),
-      ];
-  }
+/**
+ * The install that resolves the edited package.json. pnpm would refuse the
+ * changed specs under a frozen lockfile, its default in CI.
+ */
+function installArgs(manager: PackageManager): string[] {
+  return manager === 'pnpm' ? ['install', '--no-frozen-lockfile'] : ['install'];
 }
 
 function spawnInstall(command: string, args: readonly string[], cwd: string): SpawnOutcome {

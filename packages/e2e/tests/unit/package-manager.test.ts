@@ -49,6 +49,19 @@ describe('detectWorkspacePackageManager', () => {
     expect(detectWorkspacePackageManager(member, {})).toBe('npm');
   });
 
+  it.each([
+    ['an unindented block list', 'packages:\n- apps/*\n- "!apps/legacy"\n'],
+    ['a flow list', "packages: ['apps/*', \"!apps/legacy\"] # every app\n"],
+  ])('reads the packages of %s', (_form, yaml) => {
+    writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), yaml);
+    const member = path.join(dir, 'apps', 'web');
+    const legacy = path.join(dir, 'apps', 'legacy');
+    mkdirSync(member, { recursive: true });
+    mkdirSync(legacy, { recursive: true });
+    expect(detectWorkspacePackageManager(member, { npm_config_user_agent: 'npm/11.0.0' })).toBe('pnpm');
+    expect(detectWorkspacePackageManager(legacy, { npm_config_user_agent: 'npm/11.0.0' })).toBe('npm');
+  });
+
   it("ignores a lockfile above that belongs to a workspace the package is not in, or to no workspace", () => {
     writeFileSync(path.join(dir, 'pnpm-lock.yaml'), '');
     writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n  - "!packages/legacy"\n');

@@ -108,19 +108,26 @@ function workspaceGlobs(dir: string): { globs: string[]; manager: PackageManager
   return { globs: list.filter((glob): glob is string => typeof glob === 'string'), manager: undefined };
 }
 
-/** The entries of the top-level `packages:` list in a pnpm-workspace.yaml, without reading the rest of the YAML. */
+/**
+ * The entries of the top-level `packages:` list in a pnpm-workspace.yaml,
+ * without reading the rest of the YAML: a block list, indented or not, or a
+ * one-line flow list (`packages: ['apps/*']`).
+ */
 function pnpmWorkspacePackages(text: string): string[] {
+  const unquote = (value: string): string => value.trim().replace(/^(['"])(.*)\1$/u, '$2');
   const globs: string[] = [];
   let inside = false;
   for (const line of text.split(/\r?\n/u)) {
+    const flow = /^packages:\s*\[(.*)\]\s*(?:#.*)?$/u.exec(line);
+    if (flow !== null) return flow[1]!.split(',').map(unquote).filter((glob) => glob !== '');
     if (/^packages:\s*(?:#.*)?$/u.test(line)) {
       inside = true;
       continue;
     }
     if (!inside || /^\s*(?:#.*)?$/u.test(line)) continue;
-    const item = /^\s+-\s+(['"]?)(.+?)\1\s*(?:#.*)?$/u.exec(line);
+    const item = /^\s*-\s+(.+?)\s*(?:#.*)?$/u.exec(line);
     if (item === null) break;
-    globs.push(item[2]!);
+    globs.push(unquote(item[1]!));
   }
   return globs;
 }

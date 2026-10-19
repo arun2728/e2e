@@ -161,6 +161,8 @@ describe('update check', () => {
     ['off a terminal', { interactive: false }, 'run'],
     ['from a checkout', { checkout: true }, 'run'],
     ['for mcp', {}, 'mcp'],
+    // The version running `upgrade` is the one it replaces; the notice would ask for what just happened.
+    ['for upgrade', {}, 'upgrade'],
   ])('neither asks nor prints %s', async (_name, overrides, command) => {
     const { options, output } = setup({ fetch: registry('0.22.0'), ...overrides });
     const check = new UpdateCheck(options);
