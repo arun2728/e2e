@@ -8,12 +8,12 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { InvalidArgumentError } from 'commander';
 import picocolors from 'picocolors';
 import { z } from 'zod';
-import { detectWorkspacePackageManager, execCommand, type PackageManager } from '../internal/package-manager.ts';
+import { detectWorkspacePackageManager, execCommand, LOCKFILE_NAMES, type PackageManager } from '../internal/package-manager.ts';
 import { compareVersions, formatVersion, parseVersion, satisfies } from '../internal/semver.ts';
 import type { UpgradeOutcome, UpgradeResult } from '../telemetry/events.ts';
 import { findInstalledSkillDirs } from './init/agent-skill.ts';
@@ -30,7 +30,7 @@ export interface UpgradeOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly fetch?: typeof fetch;
   /** Runs the install command; the CLI hands it to the terminal. */
-  readonly spawn?: (command: string, args: readonly string[], cwd: string) => SpawnOutcome;
+  readonly spawn?: (command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv) => SpawnOutcome;
 }
 
 interface SpawnOutcome {
@@ -167,10 +167,10 @@ async function upgradeOrThrow(options: UpgradeOptions, facts: UpgradeFacts): Pro
   });
   facts.siblings = plan.filter((entry) => entry.name !== RUNNER).map((entry) => entry.name);
 
-  const manager = detectWorkspacePackageManager(project.dir, env);
+  const { manager, root } = detectWorkspacePackageManager(project.dir, env);
   facts.manager = manager;
   const where = path.resolve(project.dir) === path.resolve(cwd) ? '' : ` in ${relative(cwd, project.dir)}`;
-  const changing = plan.filter((entry) => entry.installed !== entry.version);
+  const changing = plan.filter(moves);
   if (changing.length === 0) {
     out(`Already up to date${where}: ${plan.map((entry) => `${entry.name} ${entry.version}`).join(', ')}`);
     return { result: 'up-to-date', exitCode: 0 };
@@ -186,13 +186,20 @@ async function upgradeOrThrow(options: UpgradeOptions, facts: UpgradeFacts): Pro
 
   // The new specs go into package.json and one install resolves them together:
   // an add command per package would meet the old e2e spec in npm's peer check.
+  const lockfiles = snapshotLockfiles([project.dir, root]);
   writeFileSync(project.manifestPath, serializePackage(withRequests(project.manifest, changing), project.original), 'utf8');
-  const result = (options.spawn ?? spawnInstall)(manager, args, project.dir);
-  if (result.error !== undefined || result.status !== 0) {
+  const { result, interrupted } = await whileIgnoringSignals(() =>
+    (options.spawn ?? spawnInstall)(manager, args, project.dir, { ...env, YARN_ENABLE_IMMUTABLE_INSTALLS: 'false' }),
+  );
+  const stopped = interrupted || result.signal === 'SIGINT' || result.signal === 'SIGTERM';
+  if (result.error !== undefined || result.status !== 0 || stopped) {
     writeFileSync(project.manifestPath, project.original, 'utf8');
-    const reason = result.error?.message ?? `exit ${result.status ?? result.signal}`;
-    process.stderr.write(`e2e upgrade: ${manager} ${args.join(' ')} failed (${reason}); ${manifestName} is back as it was\n`);
-    return { result: 'install-failed', exitCode: result.signal === 'SIGINT' ? 130 : 2 };
+    const restored = [manifestName, ...restoreLockfiles(lockfiles).map((file) => relative(cwd, file))];
+    const reason = stopped ? 'interrupted' : (result.error?.message ?? `exit ${result.status ?? result.signal}`);
+    process.stderr.write(
+      `e2e upgrade: ${manager} ${args.join(' ')} failed (${reason}); ${new Intl.ListFormat('en', { type: 'conjunction' }).format(restored)} ${restored.length === 1 ? 'is' : 'are'} back as before. node_modules may hold some new versions until the next ${manager} install\n`,
+    );
+    return { result: 'install-failed', exitCode: stopped ? 130 : 2 };
   }
   facts.moved = changing.length;
 
@@ -389,9 +396,18 @@ function requestFor(spec: string, version: string, target: UpgradeTarget): strin
   return parseVersion(trimmed.replace(/^=/u, '')) === undefined ? `^${version}` : version;
 }
 
+/**
+ * Whether the package moves: its installed version differs from the target,
+ * or, with nothing under node_modules (Yarn Plug'n'Play, or not installed
+ * yet), its spec differs from the one the upgrade would write.
+ */
+function moves(entry: Planned): boolean {
+  return entry.installed === undefined ? entry.spec.trim() !== entry.request : entry.installed !== entry.version;
+}
+
 function describeChange(entry: Planned): string {
   const from = entry.installed ?? entry.spec;
-  if (entry.installed === entry.version) return `${entry.version} ${picocolors.dim('(up to date)')}`;
+  if (!moves(entry)) return `${entry.version} ${picocolors.dim('(up to date)')}`;
   const before = entry.installed === undefined ? undefined : parseVersion(entry.installed);
   const after = parseVersion(entry.version);
   const downgrade = before !== undefined && after !== undefined && compareVersions(after, before) < 0;
@@ -417,8 +433,56 @@ function installArgs(manager: PackageManager): string[] {
   return manager === 'pnpm' ? ['install', '--no-frozen-lockfile'] : ['install'];
 }
 
-function spawnInstall(command: string, args: readonly string[], cwd: string): SpawnOutcome {
-  return spawnSync(command, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' });
+function spawnInstall(command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv): SpawnOutcome {
+  return spawnSync(command, args, { cwd, env, stdio: 'inherit', shell: process.platform === 'win32' });
+}
+
+/**
+ * Runs `install` with Ctrl-C and SIGTERM held off this process. The terminal
+ * sends Ctrl-C to the package manager too, which stops on its own; without a
+ * listener the signal would kill e2e first, before it puts package.json back.
+ */
+async function whileIgnoringSignals<T>(install: () => T): Promise<{ result: T; interrupted: boolean }> {
+  let interrupted = false;
+  const hold = (): void => {
+    interrupted = true;
+  };
+  process.on('SIGINT', hold);
+  process.on('SIGTERM', hold);
+  try {
+    const result = install();
+    // A signal that arrived during the synchronous install is delivered on the next turn of the loop.
+    await new Promise((resolve) => setImmediate(resolve));
+    return { result, interrupted };
+  } finally {
+    process.off('SIGINT', hold);
+    process.off('SIGTERM', hold);
+  }
+}
+
+/** Every lockfile in `dirs` as it is now, absent ones included, so a failed install can put them back. */
+function snapshotLockfiles(dirs: readonly string[]): Map<string, string | undefined> {
+  const snapshot = new Map<string, string | undefined>();
+  for (const dir of new Set(dirs)) {
+    for (const name of LOCKFILE_NAMES) {
+      const file = path.join(dir, name);
+      snapshot.set(file, existsSync(file) ? readFileSync(file, 'utf8') : undefined);
+    }
+  }
+  return snapshot;
+}
+
+/** Puts back every lockfile the install changed, created, or removed; returns their paths. */
+function restoreLockfiles(snapshot: ReadonlyMap<string, string | undefined>): string[] {
+  const restored: string[] = [];
+  for (const [file, before] of snapshot) {
+    const now = existsSync(file) ? readFileSync(file, 'utf8') : undefined;
+    if (now === before) continue;
+    if (before === undefined) rmSync(file, { force: true });
+    else writeFileSync(file, before, 'utf8');
+    restored.push(file);
+  }
+  return restored;
 }
 
 /** A path for a message: relative to the working directory, `.` for the directory itself. */

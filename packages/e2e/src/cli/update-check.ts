@@ -75,7 +75,7 @@ function upgradeCommand(cwd: string, env: NodeJS.ProcessEnv): string {
   let dir = cwd;
   while (!existsSync(path.join(dir, 'package.json')) && path.dirname(dir) !== dir) dir = path.dirname(dir);
   const project = existsSync(path.join(dir, 'package.json')) ? dir : cwd;
-  return execCommand(detectWorkspacePackageManager(project, env), 'e2e upgrade');
+  return execCommand(detectWorkspacePackageManager(project, env).manager, 'e2e upgrade');
 }
 
 export class UpdateCheck {

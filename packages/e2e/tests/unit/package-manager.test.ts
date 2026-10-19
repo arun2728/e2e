@@ -39,14 +39,16 @@ describe('detectWorkspacePackageManager', () => {
     const member = path.join(dir, 'apps', 'web');
     mkdirSync(member, { recursive: true });
     writeFileSync(path.join(member, 'package.json'), '{"name":"web"}');
-    expect(detectWorkspacePackageManager(member, { npm_config_user_agent: 'bun/1.2.0' })).toBe('bun');
+    expect(detectWorkspacePackageManager(member, { npm_config_user_agent: 'bun/1.2.0' }).manager).toBe('bun');
     writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), "# the apps\npackages:\n  - 'apps/*' # each app\n  - \"!apps/legacy\"\n\nallowBuilds:\n  - not-a-glob\n");
-    expect(detectWorkspacePackageManager(member, {})).toBe('pnpm');
+    expect(detectWorkspacePackageManager(member, {}).manager).toBe('pnpm');
     writeFileSync(path.join(dir, 'package.json'), '{"packageManager":"pnpm@12.3.4"}');
     writeFileSync(path.join(dir, 'pnpm-lock.yaml'), '');
-    expect(detectWorkspacePackageManager(member, {})).toBe('pnpm');
+    expect(detectWorkspacePackageManager(member, {}).manager).toBe('pnpm');
     writeFileSync(path.join(member, 'package-lock.json'), '{}');
-    expect(detectWorkspacePackageManager(member, {})).toBe('npm');
+    expect(detectWorkspacePackageManager(member, {})).toEqual({ manager: 'npm', root: member });
+    rmSync(path.join(member, 'package-lock.json'));
+    expect(detectWorkspacePackageManager(member, {})).toEqual({ manager: 'pnpm', root: dir });
   });
 
   it.each([
@@ -58,8 +60,8 @@ describe('detectWorkspacePackageManager', () => {
     const legacy = path.join(dir, 'apps', 'legacy');
     mkdirSync(member, { recursive: true });
     mkdirSync(legacy, { recursive: true });
-    expect(detectWorkspacePackageManager(member, { npm_config_user_agent: 'npm/11.0.0' })).toBe('pnpm');
-    expect(detectWorkspacePackageManager(legacy, { npm_config_user_agent: 'npm/11.0.0' })).toBe('npm');
+    expect(detectWorkspacePackageManager(member, { npm_config_user_agent: 'npm/11.0.0' }).manager).toBe('pnpm');
+    expect(detectWorkspacePackageManager(legacy, { npm_config_user_agent: 'npm/11.0.0' }).manager).toBe('npm');
   });
 
   it("ignores a lockfile above that belongs to a workspace the package is not in, or to no workspace", () => {
@@ -68,15 +70,15 @@ describe('detectWorkspacePackageManager', () => {
     for (const relative of ['examples/with-vite', 'packages/legacy']) {
       const outside = path.join(dir, ...relative.split('/'));
       mkdirSync(outside, { recursive: true });
-      expect(detectWorkspacePackageManager(outside, {})).toBe('npm');
-      expect(detectWorkspacePackageManager(outside, { npm_config_user_agent: 'yarn/1.22.22' })).toBe('yarn');
+      expect(detectWorkspacePackageManager(outside, {}).manager).toBe('npm');
+      expect(detectWorkspacePackageManager(outside, { npm_config_user_agent: 'yarn/1.22.22' }).manager).toBe('yarn');
     }
     rmSync(path.join(dir, 'pnpm-workspace.yaml'));
-    expect(detectWorkspacePackageManager(path.join(dir, 'packages', 'legacy'), {})).toBe('npm');
+    expect(detectWorkspacePackageManager(path.join(dir, 'packages', 'legacy'), {}).manager).toBe('npm');
     writeFileSync(path.join(dir, 'package.json'), '{"workspaces":{"packages":["packages/**"]}}');
     rmSync(path.join(dir, 'pnpm-lock.yaml'));
     writeFileSync(path.join(dir, 'bun.lock'), '');
-    expect(detectWorkspacePackageManager(path.join(dir, 'packages', 'legacy'), {})).toBe('bun');
+    expect(detectWorkspacePackageManager(path.join(dir, 'packages', 'legacy'), {}).manager).toBe('bun');
   });
 });
 

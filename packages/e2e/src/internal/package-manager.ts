@@ -52,23 +52,31 @@ export function detectPackageManager(
  * package's own field or lockfile, else those of the nearest workspace root
  * above whose package globs include it, else the manager that invoked the
  * current process, else npm. A lockfile above that belongs to no workspace
- * holding the package is another project's, and does not count.
+ * holding the package is another project's, and does not count. `root` is
+ * where the install keeps its lockfile: the workspace root for a member, the
+ * package's own directory otherwise.
  */
-export function detectWorkspacePackageManager(dir: string, env: NodeJS.ProcessEnv = process.env): PackageManager {
+export function detectWorkspacePackageManager(
+  dir: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { readonly manager: PackageManager; readonly root: string } {
   const project = path.resolve(dir);
   const own = managerAt(project);
-  if (own !== undefined) return own;
+  if (own !== undefined) return { manager: own, root: project };
   for (let current = path.dirname(project); ; current = path.dirname(current)) {
     const workspace = workspaceGlobs(current);
     if (workspace !== undefined) {
       const member = includesPackage(workspace.globs, path.relative(current, project).split(path.sep).join('/'));
-      if (member) return managerAt(current) ?? workspace.manager ?? invokingManager(env);
+      if (member) return { manager: managerAt(current) ?? workspace.manager ?? invokingManager(env), root: current };
       break;
     }
     if (path.dirname(current) === current) break;
   }
-  return invokingManager(env);
+  return { manager: invokingManager(env), root: project };
 }
+
+/** The lockfile names every manager writes, for a caller that must put one back. */
+export const LOCKFILE_NAMES: readonly string[] = [...new Set(LOCKFILES.map(([lock]) => lock))];
 
 function invokingManager(env: NodeJS.ProcessEnv): PackageManager {
   const invoking = env['npm_config_user_agent']?.split('/')[0];

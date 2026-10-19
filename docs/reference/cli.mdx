@@ -63,7 +63,7 @@ $ npx e2e --version
   version and the [`e2e upgrade`](#e2e-upgrade) command for the project's
   package manager. The
   registry is checked once a day. Nothing prints in CI, when stderr is not a
-  terminal, for `e2e mcp`, or with
+  terminal, for `e2e mcp` and `e2e upgrade`, or with
   `E2E_UPDATE_CHECK_DISABLED=1`, `NO_UPDATE_NOTIFIER=1`,
   `E2E_TELEMETRY_DISABLED=1`, or `DO_NOT_TRACK=1` set.
 
@@ -1018,15 +1018,20 @@ Release notes: https://github.com/tester-army/e2e/releases/tag/e2e%400.21.2
   root's. A lockfile above a project that no workspace lists doesn't count.
 - **The install.** The new specs go into `package.json`, each in the
   section it was in, then one `install` resolves them together. pnpm gets
-  `--no-frozen-lockfile`. When the install fails, `package.json` goes back
-  as it was.
+  `--no-frozen-lockfile`, and Yarn `YARN_ENABLE_IMMUTABLE_INSTALLS=false`,
+  so the lockfile can change in CI too. Ctrl-C reaches the package manager;
+  the command waits for it to stop.
+- **A failed install.** `package.json` and any lockfile the install changed
+  go back as they were. `node_modules` can keep some new versions until the
+  next install.
 - **The saved range.** A named version or a prerelease is pinned exactly. A
   dist-tag keeps the `^` or `~` of the old spec.
 - **Left alone.** A package linked with `workspace:`, `file:`, `link:`,
   `catalog:`, a path, or a git URL. When `e2e` itself is one, the command
   exits 2.
 - **Nothing to do.** When every installed version already matches, the
-  command installs nothing.
+  command installs nothing. Without `node_modules`, as under Yarn
+  Plug'n'Play, it compares the specs in `package.json` instead.
 - **The registry.** `npm_config_registry` when the package manager sets it,
   else `https://registry.npmjs.org/`.
 - **The agent skill.** A copy in `.agents/skills/e2e` or `.claude/skills/e2e`
@@ -1038,7 +1043,7 @@ Release notes: https://github.com/tester-army/e2e/releases/tag/e2e%400.21.2
 | 0 | The packages were installed, were already at the target, or `--dry-run` printed the plan. |
 | 2 | A range, an unknown version or dist-tag, no `package.json` that lists `e2e`, a linked `e2e`, a sibling with no release that fits, or a failed install. |
 | 3 | The registry did not answer, or sent metadata the command could not read. |
-| 130 | SIGINT during the install. `package.json` goes back as it was. |
+| 130 | Ctrl-C or SIGTERM during the install. `package.json` and the lockfile go back as they were. |
 
 #### `e2e feedback`
 

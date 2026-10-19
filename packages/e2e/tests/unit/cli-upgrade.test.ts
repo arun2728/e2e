@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
@@ -285,10 +285,57 @@ describe('e2e upgrade', () => {
     expect((await run()).exitCode).toBe(2);
     expect(edited[0]).toContain('"e2e": "^0.21.2"');
     expect(readFileSync(path.join(dir, 'package.json'), 'utf8')).toBe(before);
-    expect(written(stderrSpy)).toContain('e2e upgrade: npm install failed (exit 1); package.json is back as it was');
+    expect(written(stderrSpy)).toBe('e2e upgrade: npm install failed (exit 1); package.json is back as before. node_modules may hold some new versions until the next npm install\n');
     spawnMock.mockReturnValue({ status: null, signal: 'SIGINT' });
     expect((await run()).exitCode).toBe(130);
     expect(readFileSync(path.join(dir, 'package.json'), 'utf8')).toBe(before);
+  });
+
+  it('puts back a lockfile a failed install already wrote, and removes one it created', async () => {
+    project({ devDependencies: { e2e: '^0.20.0' } });
+    writeFileSync(path.join(dir, 'package-lock.json'), '{"lockfileVersion":3}');
+    spawnMock.mockImplementation((_command, _args, cwd) => {
+      // npm saves the lockfile before the project's own install scripts run, and one of those fails.
+      writeFileSync(path.join(cwd, 'package-lock.json'), '{"lockfileVersion":3,"e2e":"0.21.2"}');
+      writeFileSync(path.join(cwd, 'yarn.lock'), '');
+      return { status: 1, signal: null };
+    });
+    expect((await run()).exitCode).toBe(2);
+    expect(readFileSync(path.join(dir, 'package-lock.json'), 'utf8')).toBe('{"lockfileVersion":3}');
+    expect(existsSync(path.join(dir, 'yarn.lock'))).toBe(false);
+    expect(written(stderrSpy)).toContain('package.json, yarn.lock, and package-lock.json are back as before');
+  });
+
+  it('holds off Ctrl-C during the install, then puts package.json back and exits 130', async () => {
+    project({ devDependencies: { e2e: '^0.20.0' } });
+    const before = readFileSync(path.join(dir, 'package.json'), 'utf8');
+    const listeners = process.listenerCount('SIGINT');
+    spawnMock.mockImplementation(() => {
+      // The terminal's Ctrl-C reaches e2e as well as the package manager, which here finishes anyway.
+      process.emit('SIGINT', 'SIGINT');
+      return { status: 0, signal: null };
+    });
+    expect(await run()).toMatchObject({ exitCode: 130, result: 'install-failed' });
+    expect(readFileSync(path.join(dir, 'package.json'), 'utf8')).toBe(before);
+    expect(written(stderrSpy)).toContain('npm install failed (interrupted)');
+    expect(process.listenerCount('SIGINT')).toBe(listeners);
+  });
+
+  it('lets Yarn Berry change its lockfile in CI', async () => {
+    project({ devDependencies: { e2e: '^0.20.0' } });
+    expect((await run(undefined, { env: { CI: 'true' } })).exitCode).toBe(0);
+    expect(spawnMock.mock.calls[0]?.[3]).toMatchObject({ CI: 'true', YARN_ENABLE_IMMUTABLE_INSTALLS: 'false' });
+  });
+
+  it("compares specs where node_modules holds nothing, as under Yarn Plug'n'Play", async () => {
+    project({ devDependencies: { e2e: '^0.21.2', '@e2e-dev/web': '^0.14.0' } });
+    expect((await run()).exitCode).toBe(0);
+    expect(sections()['devDependencies']).toEqual({ e2e: '^0.21.2', '@e2e-dev/web': '^0.15.2' });
+    spawnMock.mockClear();
+    stdoutSpy.mockClear();
+    expect(await run()).toMatchObject({ exitCode: 0, result: 'up-to-date' });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(written(stdoutSpy)).toBe('Already up to date: e2e 0.21.2, @e2e-dev/web 0.15.2\n');
   });
 
   it('names how each run ended for telemetry, with the facts it learned before that', async () => {
