@@ -124,7 +124,8 @@ export type RunEventFact =
        * as one write of a worker process on `target`. `pair` is the test
        * executing at the time, or undefined for output between tests (a
        * module's top level while its file loads). The list reporter prints
-       * it above its live window; without it, the runner prints it as written.
+       * it above its live window; without it, the runner prints it
+       * as written unless the run is quiet.
        */
       readonly type: 'output';
       readonly target: string;

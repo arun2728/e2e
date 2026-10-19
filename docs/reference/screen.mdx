@@ -472,7 +472,8 @@ await screen.getByTestId('feed').scrollUntilVisible(row);
 | [`screen.debug`](#screen-debug) | `Promise<void>` |
 
 Both read the whole screen once, without waiting, and work on every engine.
-They run as a step. On a locator or a frame they throw `INVALID_ARGUMENT`.
+They run as a step. A locator does not have them, and a frame throws
+`INVALID_ARGUMENT`.
 
 #### `screen.tree`
 
@@ -500,8 +501,7 @@ tree(options?: ActionOptions): Promise<string>;
 
 | Throws | When |
 | --- | --- |
-| `INVALID_ARGUMENT` | Called on a locator or a frame, or with an option it does not take. |
-| `UNSUPPORTED_CAPABILITY` | The engine has no observation. |
+| `INVALID_ARGUMENT` | Called on a frame, or with an option it does not take. |
 
 #### `screen.debug`
 

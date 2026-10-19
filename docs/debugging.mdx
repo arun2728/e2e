@@ -241,8 +241,9 @@ hello from the test
 Output from outside a test, such as a file's top level or a reporter,
 prints under `stdout | runner` or `stderr | runner`. Both streams print on
 stdout. Without the `list` reporter, output goes to its own stream as
-written, except with `--reporter json`, which keeps stdout for the report
-and prints output on stderr. Output from the config load prints before the
+written, except with the `json` reporter (`--reporter json` or in
+`reporters`), which keeps stdout for the report and prints output on
+stderr. Output from the config load prints before the
 run header, or a warning replaces it if the load fails.
 
 The runner [redacts](/reference/security#redaction) secret values. The
