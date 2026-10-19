@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { compileGlob, matchesGlob } from './globs.ts';
+import { isPlainObject } from './options.ts';
 
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
@@ -20,13 +21,13 @@ function isPackageManager(value: string | undefined): value is PackageManager {
 }
 
 /** The manager a `packageManager` field such as `pnpm@10.0.0` names, or undefined for another value. */
-export function fieldManager(packageManagerField: string | undefined): PackageManager | undefined {
+function fieldManager(packageManagerField: string | undefined): PackageManager | undefined {
   const configured = packageManagerField?.split('@')[0];
   return isPackageManager(configured) ? configured : undefined;
 }
 
 /** The manager whose lockfile sits in `dir`, or undefined when none does. */
-export function lockfileManager(dir: string): PackageManager | undefined {
+function lockfileManager(dir: string): PackageManager | undefined {
   return LOCKFILES.find(([lock]) => existsSync(path.join(dir, lock)))?.[1];
 }
 
@@ -77,15 +78,13 @@ function invokingManager(env: NodeJS.ProcessEnv): PackageManager {
 /** The manager `dir` names itself: its `packageManager` field, else its lockfile. */
 function managerAt(dir: string): PackageManager | undefined {
   const field = readManifest(dir)?.['packageManager'];
-  const configured = typeof field === 'string' ? field.split('@')[0] : undefined;
-  if (isPackageManager(configured)) return configured;
-  return LOCKFILES.find(([lock]) => existsSync(path.join(dir, lock)))?.[1];
+  return fieldManager(typeof field === 'string' ? field : undefined) ?? lockfileManager(dir);
 }
 
 function readManifest(dir: string): Record<string, unknown> | undefined {
   try {
     const manifest: unknown = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
-    return typeof manifest === 'object' && manifest !== null ? (manifest as Record<string, unknown>) : undefined;
+    return isPlainObject(manifest) ? manifest : undefined;
   } catch {
     return undefined;
   }

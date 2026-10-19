@@ -125,6 +125,7 @@ Replaces [`cache.dir`](/reference/config#cache) for `e2e run` and
 | `DO_NOT_TRACK` | `DO_NOT_TRACK=1` | flag | Same as `E2E_TELEMETRY_DISABLED` |
 | `E2E_UPDATE_CHECK_DISABLED` | `E2E_UPDATE_CHECK_DISABLED=1` | flag | Turns the daily check for a newer e2e release off |
 | `NO_UPDATE_NOTIFIER` | `NO_UPDATE_NOTIFIER=1` | flag | Same as `E2E_UPDATE_CHECK_DISABLED` |
+| `npm_config_registry` | `npm_config_registry=https://npm.example.com/` | value | The registry [`e2e upgrade`](/reference/cli#e2e-upgrade) reads versions from; default `https://registry.npmjs.org/`. Package managers set it for the commands they run |
 | `E2E_TELEMETRY_DEBUG` | `E2E_TELEMETRY_DEBUG=1` | flag | Prints every telemetry event to stderr instead of sending it |
 | [`E2E_TELEMETRY_FLEET`](#e2e_telemetry_fleet) | `E2E_TELEMETRY_FLEET=acme` | value | Names the platform running e2e for its users |
 | `XDG_CONFIG_HOME` | `XDG_CONFIG_HOME=~/.config` | value | Directory of the preferences file and the update check's `update-check.json`, `$XDG_CONFIG_HOME/e2e`; default `~/.config/e2e` |
