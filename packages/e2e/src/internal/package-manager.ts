@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { compileGlob, matchesGlob } from './globs.ts';
 
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
@@ -45,33 +46,102 @@ export function detectPackageManager(
 }
 
 /**
- * The manager of a package that may sit inside a workspace, whose lockfile
- * and `packageManager` field are at the workspace root: the nearest field or
- * lockfile from `dir` up, then the manager that invoked the current process,
- * then npm.
+ * The manager of the package in `dir`, which may be a member of a workspace
+ * whose lockfile and `packageManager` field are at the workspace root: the
+ * package's own field or lockfile, else those of the nearest workspace root
+ * above whose package globs include it, else the manager that invoked the
+ * current process, else npm. A lockfile above that belongs to no workspace
+ * holding the package is another project's, and does not count.
  */
 export function detectWorkspacePackageManager(dir: string, env: NodeJS.ProcessEnv = process.env): PackageManager {
-  for (let current = path.resolve(dir); ; current = path.dirname(current)) {
-    const configured = readPackageManagerField(current)?.split('@')[0];
-    if (isPackageManager(configured)) return configured;
-    for (const [lock, manager] of LOCKFILES) {
-      if (existsSync(path.join(current, lock))) return manager;
+  const project = path.resolve(dir);
+  const own = managerAt(project);
+  if (own !== undefined) return own;
+  for (let current = path.dirname(project); ; current = path.dirname(current)) {
+    const workspace = workspaceGlobs(current);
+    if (workspace !== undefined) {
+      const member = includesPackage(workspace.globs, path.relative(current, project).split(path.sep).join('/'));
+      if (member) return managerAt(current) ?? workspace.manager ?? invokingManager(env);
+      break;
     }
     if (path.dirname(current) === current) break;
   }
+  return invokingManager(env);
+}
+
+function invokingManager(env: NodeJS.ProcessEnv): PackageManager {
   const invoking = env['npm_config_user_agent']?.split('/')[0];
   return isPackageManager(invoking) ? invoking : 'npm';
 }
 
-/** The `packageManager` field of `dir/package.json`, when it has one that is a string. */
-function readPackageManagerField(dir: string): string | undefined {
+/** The manager `dir` names itself: its `packageManager` field, else its lockfile. */
+function managerAt(dir: string): PackageManager | undefined {
+  const field = readManifest(dir)?.['packageManager'];
+  const configured = typeof field === 'string' ? field.split('@')[0] : undefined;
+  if (isPackageManager(configured)) return configured;
+  return LOCKFILES.find(([lock]) => existsSync(path.join(dir, lock)))?.[1];
+}
+
+function readManifest(dir: string): Record<string, unknown> | undefined {
   try {
     const manifest: unknown = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
-    const field = typeof manifest === 'object' && manifest !== null && 'packageManager' in manifest ? manifest.packageManager : undefined;
-    return typeof field === 'string' ? field : undefined;
+    return typeof manifest === 'object' && manifest !== null ? (manifest as Record<string, unknown>) : undefined;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The package globs of a workspace root at `dir`: `pnpm-workspace.yaml`'s
+ * `packages` list (a pnpm workspace), else the `workspaces` field of its
+ * package.json, an array or `{ packages }` (npm, Yarn, Bun). Undefined when
+ * `dir` is no workspace root.
+ */
+function workspaceGlobs(dir: string): { globs: string[]; manager: PackageManager | undefined } | undefined {
+  try {
+    return { globs: pnpmWorkspacePackages(readFileSync(path.join(dir, 'pnpm-workspace.yaml'), 'utf8')), manager: 'pnpm' };
+  } catch {
+    // No pnpm workspace here; the manifest may declare one.
+  }
+  const field = readManifest(dir)?.['workspaces'];
+  const list = Array.isArray(field) ? field : typeof field === 'object' && field !== null && 'packages' in field ? field.packages : undefined;
+  if (!Array.isArray(list)) return undefined;
+  return { globs: list.filter((glob): glob is string => typeof glob === 'string'), manager: undefined };
+}
+
+/** The entries of the top-level `packages:` list in a pnpm-workspace.yaml, without reading the rest of the YAML. */
+function pnpmWorkspacePackages(text: string): string[] {
+  const globs: string[] = [];
+  let inside = false;
+  for (const line of text.split(/\r?\n/u)) {
+    if (/^packages:\s*(?:#.*)?$/u.test(line)) {
+      inside = true;
+      continue;
+    }
+    if (!inside || /^\s*(?:#.*)?$/u.test(line)) continue;
+    const item = /^\s+-\s+(['"]?)(.+?)\1\s*(?:#.*)?$/u.exec(line);
+    if (item === null) break;
+    globs.push(item[2]!);
+  }
+  return globs;
+}
+
+/** Whether `relative`, a `/`-separated path from the workspace root, matches an including glob and no `!` one. */
+function includesPackage(globs: readonly string[], relative: string): boolean {
+  if (relative === '' || relative.startsWith('..')) return false;
+  const matches = (pattern: string): boolean => {
+    const normalized = pattern.replace(/^\.\//u, '').replace(/\/+$/u, '');
+    if (normalized === relative) return true;
+    try {
+      return matchesGlob(compileGlob(normalized), relative);
+    } catch {
+      return false;
+    }
+  };
+  return (
+    globs.some((glob) => !glob.startsWith('!') && matches(glob)) &&
+    !globs.some((glob) => glob.startsWith('!') && matches(glob.slice(1)))
+  );
 }
 
 /** The command that runs the package.json script `name` with the given manager. */

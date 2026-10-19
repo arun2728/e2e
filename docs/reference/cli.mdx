@@ -1011,6 +1011,9 @@ Release notes: https://github.com/tester-army/e2e/releases/tag/e2e%400.21.2
   Otherwise it gets its newest release that does. A deprecated release is
   never picked, and a prerelease only when `e2e` gets one. An integration
   follows the engine it plugs into.
+- **The package manager.** The one the project's lockfile or
+  `packageManager` field names. A workspace member uses its workspace
+  root's. A lockfile above a project that no workspace lists doesn't count.
 - **The install.** One add command per section, so each package stays in
   `dependencies`, `devDependencies`, or `optionalDependencies`. At a pnpm
   workspace root, the command adds `--workspace-root`.
