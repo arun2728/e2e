@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   addDevDependencyCommand,
   detectPackageManager,
+  detectWorkspacePackageManager,
   execCommand,
   runScriptCommand,
   type PackageManager,
@@ -30,6 +31,21 @@ describe('detectPackageManager', () => {
     expect(detectPackageManager(dir, undefined, { npm_config_user_agent: 'bun/1.2.0' })).toBe('bun');
     expect(detectPackageManager(dir, undefined, { npm_config_user_agent: 'cargo/1' })).toBe('npm');
     expect(detectPackageManager(dir, undefined, {})).toBe('npm');
+  });
+});
+
+describe('detectWorkspacePackageManager', () => {
+  it('reads the nearest packageManager field or lockfile from the package up to the workspace root', () => {
+    const member = path.join(dir, 'apps', 'web');
+    mkdirSync(member, { recursive: true });
+    writeFileSync(path.join(member, 'package.json'), '{"name":"web"}');
+    expect(detectWorkspacePackageManager(member, { npm_config_user_agent: 'bun/1.2.0' })).toBe('bun');
+    writeFileSync(path.join(dir, 'pnpm-lock.yaml'), '');
+    expect(detectWorkspacePackageManager(member, {})).toBe('pnpm');
+    writeFileSync(path.join(dir, 'apps', 'package.json'), '{"packageManager":"yarn@4.5.0"}');
+    expect(detectWorkspacePackageManager(member, {})).toBe('yarn');
+    writeFileSync(path.join(member, 'package-lock.json'), '{}');
+    expect(detectWorkspacePackageManager(member, {})).toBe('npm');
   });
 });
 

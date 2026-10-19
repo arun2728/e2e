@@ -180,7 +180,7 @@ export async function feedback(report: FeedbackReport, options: FeedbackOptions)
     const latest = await latestRelease(fetchImpl, LATEST_TIMEOUT_MS);
     if (latest !== undefined && olderThan(options.version, latest)) {
       process.stderr.write(
-        `feedback not sent: e2e ${options.version} is older than the latest release ${latest}, which may already fix this. Upgrade e2e, check the problem still happens, and send it again; --allow-outdated sends it anyway.\n`,
+        `feedback not sent: e2e ${options.version} is older than the latest release ${latest}, which may already fix this. Upgrade with e2e upgrade, check the problem still happens, and send it again; --allow-outdated sends it anyway.\n`,
       );
       return 2;
     }

@@ -6,9 +6,9 @@ icon: "terminal"
 "twitter:image": "https://e2e.tester.army/docs/images/og/reference/cli.png?v=e0e03be674"
 ---
 
-The `e2e` command scaffolds a project, runs, lists, and explores tests, and
-manages the replay cache, subscription logins, and telemetry. Every command
-takes `--help`.
+The `e2e` command scaffolds a project, runs, lists, and explores tests,
+manages the replay cache, subscription logins, and telemetry, and upgrades
+itself. Every command takes `--help`.
 
 <CodeGroup>
 ```bash npm
@@ -80,6 +80,7 @@ $ npx e2e --version
 | [`e2e explore`](#e2e-explore) | Explores the app toward a goal |
 | [`e2e list`](#e2e-list) | Prints the tests a run selects |
 | [`e2e cache`](#e2e-cache) | Inspects or clears the replay cache |
+| [`e2e upgrade`](#e2e-upgrade) | Upgrades e2e and its packages |
 | [`e2e feedback`](#e2e-feedback) | Sends feedback to the e2e team |
 | [`e2e telemetry`](#e2e-telemetry) | Shows or switches usage telemetry |
 
@@ -952,6 +953,87 @@ These commands read the file store only. With a custom `cache.store` they
 exit 2 and say so.
 </Note>
 
+#### `e2e upgrade`
+
+Upgrades `e2e` to the latest release, a dist-tag, or one version. It also
+moves every `@e2e-dev/*` package in the same `package.json`, and installs
+them with the project's package manager. `e2e update` is the same command.
+
+<Note>
+`npx e2e` runs the installed version. When that version has no `upgrade`
+command yet, run `npx e2e@latest upgrade` one time.
+</Note>
+
+<CodeGroup>
+```bash npm
+npx e2e upgrade             # the latest release
+npx e2e upgrade 0.21.0      # one version
+npx e2e upgrade nightly     # a dist-tag
+npx e2e update --dry-run    # show the plan, change nothing
+```
+
+```bash pnpm
+pnpm exec e2e upgrade             # the latest release
+pnpm exec e2e upgrade 0.21.0      # one version
+pnpm exec e2e upgrade nightly     # a dist-tag
+pnpm exec e2e update --dry-run    # show the plan, change nothing
+```
+
+```bash bun
+bunx e2e upgrade             # the latest release
+bunx e2e upgrade 0.21.0      # one version
+bunx e2e upgrade nightly     # a dist-tag
+bunx e2e update --dry-run    # show the plan, change nothing
+```
+</CodeGroup>
+
+```console
+$ npx e2e upgrade
+Upgrading with npm:
+  e2e              0.19.0 → 0.21.2
+  @e2e-dev/web     0.13.0 → 0.15.2
+  @e2e-dev/kernel  0.1.2 → 0.2.1
+$ npm install --save-dev e2e@^0.21.2 @e2e-dev/web@^0.15.2 @e2e-dev/kernel@^0.2.1
+...
+Upgraded: e2e 0.21.2, @e2e-dev/web 0.15.2, @e2e-dev/kernel 0.2.1
+Release notes: https://github.com/tester-army/e2e/releases/tag/e2e%400.21.2
+```
+
+| Option | Description |
+| --- | --- |
+| `[version]` | A version such as `0.22.0`, or a dist-tag such as `latest` or `nightly`. Ranges are refused. Default: `latest`. |
+| `--dry-run` | Prints the versions and the install commands, and changes nothing. |
+
+- **The project.** The nearest `package.json` from the working directory up
+  that lists `e2e`.
+- **Sibling versions.** Each `@e2e-dev/*` package gets its release under the
+  same dist-tag, when that release's peer ranges accept the new versions.
+  Otherwise it gets its newest release that does. A deprecated release is
+  never picked, and a prerelease only when `e2e` gets one. An integration
+  follows the engine it plugs into.
+- **The install.** One add command per section, so each package stays in
+  `dependencies`, `devDependencies`, or `optionalDependencies`. At a pnpm
+  workspace root, the command adds `--workspace-root`.
+- **The saved range.** A named version or a prerelease is pinned exactly. A
+  dist-tag keeps the `^` or `~` of the old spec.
+- **Left alone.** A package linked with `workspace:`, `file:`, `link:`,
+  `catalog:`, a path, or a git URL. When `e2e` itself is one, the command
+  exits 2.
+- **Nothing to do.** When every installed version already matches, the
+  command installs nothing.
+- **The registry.** `npm_config_registry` when the package manager sets it,
+  else `https://registry.npmjs.org/`.
+- **The agent skill.** A copy in `.agents/skills/e2e` or `.claude/skills/e2e`
+  stays at the old version. The command says so; run `e2e init` to refresh
+  it.
+
+| Exit code | When |
+| --- | --- |
+| 0 | The packages were installed, were already at the target, or `--dry-run` printed the plan. |
+| 2 | A range, an unknown version or dist-tag, no `package.json` that lists `e2e`, a linked `e2e`, a sibling with no release that fits, or a failed install. |
+| 3 | The registry did not answer, or sent metadata the command could not read. |
+| 130 | SIGINT during the install. |
+
 #### `e2e feedback`
 
 Sends one report about e2e itself to the e2e team: something broke, the docs
@@ -1007,8 +1089,9 @@ bunx e2e feedback --type feature -m "Need a way to set the viewport per test" --
   and submit it yourself.
 - **Outdated releases are refused.** Before sending, the command asks the npm
   registry for the latest e2e release. When yours is older, it exits 2 and
-  sends nothing, since the problem may be fixed already. Upgrade, check that
-  it still happens, and send it again, or pass `--allow-outdated`.
+  sends nothing, since the problem may be fixed already. Upgrade with
+  [`e2e upgrade`](#e2e-upgrade), check that it still happens, and send it
+  again, or pass `--allow-outdated`.
 - **Where it goes.** One `e2e_feedback` event, to the same PostHog project as
   [telemetry](/telemetry#feedback), with the anonymous machine facts every
   telemetry event carries.
@@ -1079,7 +1162,7 @@ E2E_TELEMETRY_DEBUG=1 bunx e2e run
 | 0 | All selected tests passed, were flaky, or were explicitly skipped |
 | 1 | Final test or setup failure, or test timeout |
 | 2 | CLI, config, collection, dependency, credential, model-config, or policy error |
-| 3 | Engine, app process, model provider, artifact, or cleanup infrastructure failure; `e2e feedback` that could not be delivered |
+| 3 | Engine, app process, model provider, artifact, or cleanup infrastructure failure; `e2e feedback` that could not be delivered; `e2e upgrade` that could not reach the registry |
 | 4 | Internal runner invariant or unhandled runner error |
 | 130 | Interrupted by a user or CI signal |
 

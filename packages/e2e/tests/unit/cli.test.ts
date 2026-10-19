@@ -12,6 +12,7 @@ const runMock = vi.hoisted(() => vi.fn());
 const listMock = vi.hoisted(() => vi.fn());
 const initMock = vi.hoisted(() => vi.fn());
 const watchMock = vi.hoisted(() => vi.fn());
+const upgradeMock = vi.hoisted(() => vi.fn());
 
 // The suite runs from the repository; these tests cover an installed CLI, where telemetry is on.
 vi.mock('../../src/telemetry/checkout.ts', () => ({ runsFromCheckout: () => false }));
@@ -20,6 +21,10 @@ vi.mock('../../src/run/runner.ts', () => ({ run: runMock }));
 vi.mock('../../src/cli/watch.ts', () => ({ watchSession: watchMock }));
 vi.mock('../../src/cli/init.ts', () => ({
   init: initMock,
+}));
+vi.mock('../../src/cli/upgrade.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/cli/upgrade.ts')>()),
+  upgrade: upgradeMock,
 }));
 
 const { main } = await import('../../src/cli/index.ts');
@@ -71,6 +76,8 @@ beforeEach(() => {
   initMock.mockResolvedValue(initOutcome(0));
   watchMock.mockReset();
   watchMock.mockResolvedValue(0);
+  upgradeMock.mockReset();
+  upgradeMock.mockResolvedValue(0);
   process.exitCode = undefined;
   stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -891,6 +898,34 @@ describe('e2e feedback', () => {
       expect(process.exitCode).toBe(2);
     }
     expect(sentFeedback()).toEqual([]);
+  });
+});
+
+describe('e2e upgrade argument parsing', () => {
+  it('upgrades to latest by default, under either name', async () => {
+    for (const name of ['upgrade', 'update']) {
+      upgradeMock.mockClear();
+      await invoke(name);
+      expect(upgradeMock).toHaveBeenCalledExactlyOnceWith({ target: { kind: 'tag', tag: 'latest' } });
+      expect(process.exitCode).toBe(0);
+    }
+  });
+
+  it('passes a version, a dist-tag, and --dry-run through, and exits with the upgrade\'s code', async () => {
+    upgradeMock.mockResolvedValue(3);
+    await invoke('update', 'v0.22.0', '--dry-run');
+    expect(upgradeMock).toHaveBeenCalledExactlyOnceWith({ target: { kind: 'version', version: '0.22.0' }, dryRun: true });
+    expect(process.exitCode).toBe(3);
+    upgradeMock.mockClear();
+    await invoke('upgrade', 'nightly');
+    expect(upgradeMock).toHaveBeenCalledExactlyOnceWith({ target: { kind: 'tag', tag: 'nightly' } });
+  });
+
+  it('refuses a range with exit 2 and never upgrades', async () => {
+    await invoke('upgrade', '^0.22.0');
+    expect(upgradeMock).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(2);
+    expect(written(stderrSpy)).toContain("error: command-argument value '^0.22.0' is invalid for argument 'version'. must be a version such as 0.22.0 or a dist-tag");
   });
 });
 

@@ -1,5 +1,7 @@
 /** The e2e release the npm registry's `latest` dist-tag points at, and how versions order. */
 
+import { compareVersions, parseVersion } from './semver.ts';
+
 /** The `latest` dist-tag's manifest; small, and public. */
 const LATEST_URL = 'https://registry.npmjs.org/e2e/latest';
 const RELEASE = /^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
@@ -27,12 +29,7 @@ export async function latestRelease(fetchImpl: typeof fetch, timeoutMs: number):
 
 /** Whether `version` comes before `latest`; a prerelease comes before its release. Unparsable versions never do. */
 export function olderThan(version: string, latest: string): boolean {
-  const a = RELEASE.exec(version);
-  const b = RELEASE.exec(latest);
-  if (a === null || b === null) return false;
-  for (const index of [1, 2, 3]) {
-    const difference = Number(a[index]) - Number(b[index]);
-    if (difference !== 0) return difference < 0;
-  }
-  return a[4] !== undefined && b[4] === undefined;
+  const a = parseVersion(version);
+  const b = parseVersion(latest);
+  return a !== undefined && b !== undefined && compareVersions(a, b) < 0;
 }

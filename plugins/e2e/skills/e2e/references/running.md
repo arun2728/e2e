@@ -21,6 +21,8 @@ npx e2e cache ls|clear|stats       # inspect or empty the replay cache
 npx e2e login|logout|models [provider]  # e2e/oauth subscription logins: openai,
                                    # github-copilot, opencode-console, spacexai
 npx e2e mcp [--target <name>]      # MCP server for a coding agent (topic mcp)
+npx e2e upgrade [version|tag]      # e2e and its @e2e-dev packages to latest or a version;
+                                   # alias update, --dry-run shows the plan
 npx e2e feedback -m <text> [opts]  # report a problem with e2e itself
 npx e2e telemetry [disable|enable] # anonymous usage telemetry: status or switch
 ```

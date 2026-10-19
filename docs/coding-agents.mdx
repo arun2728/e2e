@@ -31,8 +31,8 @@ bunx e2e init
 | `.agents/skills/e2e/` | Agents that read `.agents/skills` |
 | `.claude/skills/e2e/` | Claude Code. A symlink to `.agents/skills/e2e/` when both are installed. |
 
-The copy holds `SKILL.md` and topic references. After you upgrade e2e, run
-`init` again to update it. Without `init`, `npx skills add tester-army/e2e`
+The copy holds `SKILL.md` and topic references. After you upgrade e2e with
+[`e2e upgrade`](/reference/cli#e2e-upgrade), run `init` again to update it. Without `init`, `npx skills add tester-army/e2e`
 installs the skill, and `npx e2e guide [topic]` prints it from the
 installed package. The Claude Code and Codex plugin below installs all
 three e2e skills for every project.

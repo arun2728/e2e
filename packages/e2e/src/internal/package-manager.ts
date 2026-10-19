@@ -1,6 +1,6 @@
 /** Which package manager a project uses, for install hints that name a runnable command. */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
@@ -42,6 +42,36 @@ export function detectPackageManager(
   if (found !== undefined) return found;
   const invoking = env['npm_config_user_agent']?.split('/')[0];
   return isPackageManager(invoking) ? invoking : 'npm';
+}
+
+/**
+ * The manager of a package that may sit inside a workspace, whose lockfile
+ * and `packageManager` field are at the workspace root: the nearest field or
+ * lockfile from `dir` up, then the manager that invoked the current process,
+ * then npm.
+ */
+export function detectWorkspacePackageManager(dir: string, env: NodeJS.ProcessEnv = process.env): PackageManager {
+  for (let current = path.resolve(dir); ; current = path.dirname(current)) {
+    const configured = readPackageManagerField(current)?.split('@')[0];
+    if (isPackageManager(configured)) return configured;
+    for (const [lock, manager] of LOCKFILES) {
+      if (existsSync(path.join(current, lock))) return manager;
+    }
+    if (path.dirname(current) === current) break;
+  }
+  const invoking = env['npm_config_user_agent']?.split('/')[0];
+  return isPackageManager(invoking) ? invoking : 'npm';
+}
+
+/** The `packageManager` field of `dir/package.json`, when it has one that is a string. */
+function readPackageManagerField(dir: string): string | undefined {
+  try {
+    const manifest: unknown = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    const field = typeof manifest === 'object' && manifest !== null && 'packageManager' in manifest ? manifest.packageManager : undefined;
+    return typeof field === 'string' ? field : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The command that runs the package.json script `name` with the given manager. */
