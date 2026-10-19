@@ -36,6 +36,8 @@ export const EVENT_CLI_SESSION = 'e2e_cli_session';
 export const EVENT_RUN_COMPLETED = 'e2e_run_completed';
 /** One per `e2e init`, however it ended: what was chosen and whether anything was written. */
 export const EVENT_INIT_COMPLETED = 'e2e_init_completed';
+/** One per `e2e upgrade`, however it ended: the versions it moved between and what stopped it. */
+export const EVENT_UPGRADE_COMPLETED = 'e2e_upgrade_completed';
 /** One per `open_session` an `e2e mcp` server served, sent when the session closes or its open fails. */
 export const EVENT_MCP_SESSION = 'e2e_mcp_session';
 /** The session's error code for a flag or argument commander rejected; no runner code exists for it. */
@@ -78,7 +80,46 @@ export interface InitOutcome {
   readonly install: boolean;
 }
 
+/**
+ * How `e2e upgrade` ended. `upgraded` installed, `up-to-date` had nothing to
+ * install, `dry-run` printed the plan; the rest stopped it: no package.json
+ * that lists e2e, one that could not be read, an e2e linked from a workspace
+ * or a path, a version or dist-tag e2e never published, a sibling with no
+ * release that fits, a registry that did not answer, a failed or interrupted
+ * install.
+ */
+export type UpgradeResult =
+  | 'upgraded'
+  | 'up-to-date'
+  | 'dry-run'
+  | 'no-project'
+  | 'invalid-project'
+  | 'linked'
+  | 'unknown-target'
+  | 'incompatible'
+  | 'registry-failed'
+  | 'install-failed';
+
+/** What `e2e upgrade` was asked for and did; each fact is null until the command learned it. */
+export interface UpgradeOutcome {
+  readonly result: UpgradeResult;
+  /** `version` for a named version, else the dist-tag as typed. */
+  readonly target: string;
+  /** The e2e installed before, and the one the target resolved to. */
+  readonly fromVersion: string | null;
+  readonly toVersion: string | null;
+  readonly manager: string | null;
+  /** The registry `@e2e-dev/*` packages the project lists, and how many of them and e2e the install moved. */
+  readonly siblings: readonly string[];
+  readonly moved: number;
+  /** Packages left alone because a workspace, a path, or git provides them. */
+  readonly linked: number;
+}
+
 const SEMVER = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/u;
+/** The dist-tags e2e publishes under; any other tag a user typed is `other`. */
+const UPGRADE_TAGS: ReadonlySet<string> = new Set(['latest', 'nightly', 'canary', 'beta']);
+const SIBLING_SCOPE = '@e2e-dev/';
 /** Distinct error codes, and distinct failure kinds, a run event lists. */
 const MAX_ERROR_CODES = 20;
 
@@ -113,6 +154,32 @@ export function initCompletedEvent(outcome: InitOutcome): TelemetryEvent {
       skill: outcome.skill,
       mcp: outcome.mcp,
       install: outcome.install,
+    },
+  };
+}
+
+/**
+ * The upgrade event: e2e's own versions and dist-tags, and the sibling
+ * packages by their name inside the `@e2e-dev` scope. A tag e2e does not
+ * publish, a version that is not semver, and a package outside the scope
+ * fold to `other` or null.
+ */
+export function upgradeCompletedEvent(outcome: UpgradeOutcome): TelemetryEvent {
+  const version = (value: string | null): string | null => (value !== null && SEMVER.test(value) ? value : null);
+  const from = version(outcome.fromVersion);
+  const to = version(outcome.toVersion);
+  return {
+    name: EVENT_UPGRADE_COMPLETED,
+    properties: {
+      result: outcome.result,
+      target: outcome.target === 'version' || UPGRADE_TAGS.has(outcome.target) ? outcome.target : 'other',
+      from_version: from,
+      to_version: to,
+      prerelease: to === null ? null : to.includes('-'),
+      manager: outcome.manager === null ? null : plainToken(outcome.manager),
+      siblings: unique(outcome.siblings.map((name) => (name.startsWith(SIBLING_SCOPE) ? plainToken(name.slice(SIBLING_SCOPE.length)) : 'other'))),
+      packages_moved: outcome.moved,
+      packages_linked: outcome.linked,
     },
   };
 }

@@ -52,7 +52,7 @@ function project(manifest: Record<string, unknown>, installed: Record<string, st
   }
 }
 
-async function run(target: UpgradeTarget = { kind: 'tag', tag: 'latest' }, overrides: Partial<UpgradeOptions> = {}): Promise<number> {
+async function run(target: UpgradeTarget = { kind: 'tag', tag: 'latest' }, overrides: Partial<UpgradeOptions> = {}): ReturnType<typeof upgrade> {
   return upgrade({ target, cwd: dir, env: {}, fetch: fetchMock, spawn: spawnMock, ...overrides });
 }
 
@@ -113,7 +113,17 @@ describe('e2e upgrade', () => {
       { devDependencies: { e2e: '^0.20.0', '@e2e-dev/web': '~0.14.0' }, dependencies: { '@e2e-dev/kernel': '^0.1.0' } },
       { e2e: '0.20.0', '@e2e-dev/web': '0.14.0', '@e2e-dev/kernel': '0.1.0' },
     );
-    expect(await run()).toBe(0);
+    expect(await run()).toEqual({
+      exitCode: 0,
+      result: 'upgraded',
+      target: 'latest',
+      fromVersion: '0.20.0',
+      toVersion: '0.21.2',
+      manager: 'npm',
+      siblings: ['@e2e-dev/kernel', '@e2e-dev/web'],
+      moved: 3,
+      linked: 0,
+    });
     expect(commands()).toEqual([
       'npm install --save-prod @e2e-dev/kernel@^0.2.1',
       'npm install --save-dev e2e@^0.21.2 @e2e-dev/web@~0.15.2',
@@ -127,7 +137,7 @@ describe('e2e upgrade', () => {
 
   it('pins a named version exactly and picks the newest sibling release whose peer range accepts it', async () => {
     project({ devDependencies: { e2e: '^0.21.2', '@e2e-dev/web': '^0.15.2', '@e2e-dev/kernel': '^0.2.1' } }, { e2e: '0.21.2', '@e2e-dev/web': '0.15.2', '@e2e-dev/kernel': '0.2.1' });
-    expect(await run({ kind: 'version', version: '0.15.0' })).toBe(0);
+    expect((await run({ kind: 'version', version: '0.15.0' })).exitCode).toBe(0);
     // web 0.14.0 and later need e2e 0.18.0; kernel 0.2.1 needs web 0.15.0, so it follows web down.
     expect(commands()).toEqual(['npm install --save-dev --save-exact e2e@0.15.0 @e2e-dev/web@0.12.0 @e2e-dev/kernel@0.1.0']);
     expect(written(stdoutSpy)).toContain('0.21.2 → 0.15.0 (downgrade)');
@@ -135,7 +145,7 @@ describe('e2e upgrade', () => {
 
   it('follows a dist-tag across the siblings and pins the prerelease', async () => {
     project({ devDependencies: { e2e: '^0.21.2', '@e2e-dev/web': '^0.15.2' } }, { e2e: '0.21.2', '@e2e-dev/web': '0.15.2' });
-    expect(await run({ kind: 'tag', tag: 'nightly' })).toBe(0);
+    expect((await run({ kind: 'tag', tag: 'nightly' })).exitCode).toBe(0);
     expect(commands()).toEqual(['npm install --save-dev --save-exact e2e@0.21.3-nightly-20261019081103 @e2e-dev/web@0.15.3-nightly-20261019081103']);
     expect(written(stdoutSpy)).not.toContain('Release notes');
   });
@@ -146,7 +156,7 @@ describe('e2e upgrade', () => {
     project({ devDependencies: { e2e: '0.20.0', '@e2e-dev/web': '0.14.0' } });
     REGISTRY['@e2e-dev/web']!.tags['latest'] = '0.15.1';
     try {
-      expect(await run()).toBe(0);
+      expect((await run()).exitCode).toBe(0);
     } finally {
       REGISTRY['@e2e-dev/web']!.tags['latest'] = '0.15.2';
     }
@@ -156,21 +166,21 @@ describe('e2e upgrade', () => {
 
   it('changes nothing when everything is at the target', async () => {
     project({ devDependencies: { e2e: '^0.21.2', '@e2e-dev/web': '^0.15.2' } }, { e2e: '0.21.2', '@e2e-dev/web': '0.15.2' });
-    expect(await run()).toBe(0);
+    expect((await run()).exitCode).toBe(0);
     expect(spawnMock).not.toHaveBeenCalled();
     expect(written(stdoutSpy)).toBe('Already up to date: e2e 0.21.2, @e2e-dev/web 0.15.2\n');
   });
 
   it('installs only the packages that move', async () => {
     project({ devDependencies: { e2e: '^0.21.2', '@e2e-dev/web': '^0.14.0' } }, { e2e: '0.21.2', '@e2e-dev/web': '0.14.0' });
-    expect(await run()).toBe(0);
+    expect((await run()).exitCode).toBe(0);
     expect(commands()).toEqual(['npm install --save-dev @e2e-dev/web@^0.15.2']);
     expect(written(stdoutSpy)).not.toContain('Release notes');
   });
 
   it('prints the plan and runs nothing with --dry-run', async () => {
     project({ devDependencies: { e2e: '^0.20.0' } }, { e2e: '0.20.0' });
-    expect(await run(undefined, { dryRun: true })).toBe(0);
+    expect((await run(undefined, { dryRun: true })).exitCode).toBe(0);
     expect(spawnMock).not.toHaveBeenCalled();
     expect(written(stdoutSpy)).toContain('Would upgrade with npm:');
     expect(written(stdoutSpy)).toContain('$ npm install --save-dev e2e@^0.21.2');
@@ -182,7 +192,7 @@ describe('e2e upgrade', () => {
     writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), 'packages: []\n');
     project({ devDependencies: { e2e: '^0.20.0' } });
     mkdirSync(path.join(dir, 'tests', 'flows'), { recursive: true });
-    expect(await run(undefined, { cwd: path.join(dir, 'tests', 'flows') })).toBe(0);
+    expect((await run(undefined, { cwd: path.join(dir, 'tests', 'flows') })).exitCode).toBe(0);
     expect(commands()).toEqual(['pnpm add --save-dev --workspace-root e2e@^0.21.2']);
     expect(spawnMock.mock.calls[0]?.[2]).toBe(dir);
     expect(written(stdoutSpy)).toContain(`Upgrading in ${path.join('..', '..')} with pnpm:`);
@@ -190,20 +200,20 @@ describe('e2e upgrade', () => {
 
   it('leaves linked siblings alone and refuses a linked e2e', async () => {
     project({ devDependencies: { e2e: '^0.20.0', '@e2e-dev/web': 'workspace:*', '@e2e-dev/kernel': 'file:../kernel' } });
-    expect(await run()).toBe(0);
+    expect((await run()).exitCode).toBe(0);
     expect(commands()).toEqual(['npm install --save-dev e2e@^0.21.2']);
     expect(written(stdoutSpy)).toContain('Skipping @e2e-dev/web: "workspace:*" is not a registry version');
 
     spawnMock.mockClear();
     project({ devDependencies: { e2e: 'workspace:*' } });
-    expect(await run()).toBe(2);
+    expect((await run()).exitCode).toBe(2);
     expect(spawnMock).not.toHaveBeenCalled();
     expect(written(stderrSpy)).toContain('e2e upgrade: e2e is "workspace:*" in package.json, not a registry version');
   });
 
   it('skips a sibling the registry does not have', async () => {
     project({ devDependencies: { e2e: '^0.20.0', '@e2e-dev/private-thing': '^1.0.0' } });
-    expect(await run()).toBe(0);
+    expect((await run()).exitCode).toBe(0);
     expect(commands()).toEqual(['npm install --save-dev e2e@^0.21.2']);
     expect(written(stdoutSpy)).toContain('Skipping @e2e-dev/private-thing: the registry has no such package');
   });
@@ -213,7 +223,7 @@ describe('e2e upgrade', () => {
     [{ kind: 'tag', tag: 'beta' }, 'e2e has no "beta" release; its dist-tags are latest, nightly'],
   ] as const)('exits 2 for %j', async (target, message) => {
     project({ devDependencies: { e2e: '^0.20.0' } });
-    expect(await run(target)).toBe(2);
+    expect((await run(target)).exitCode).toBe(2);
     expect(spawnMock).not.toHaveBeenCalled();
     expect(written(stderrSpy)).toBe(`e2e upgrade: ${message}\n`);
   });
@@ -222,7 +232,7 @@ describe('e2e upgrade', () => {
     project({ devDependencies: { e2e: '^0.20.0', '@e2e-dev/web': '^0.15.0' } });
     REGISTRY['e2e']!.versions['0.10.0'] = {};
     try {
-      expect(await run({ kind: 'version', version: '0.10.0' })).toBe(2);
+      expect((await run({ kind: 'version', version: '0.10.0' })).exitCode).toBe(2);
     } finally {
       delete REGISTRY['e2e']!.versions['0.10.0'];
     }
@@ -231,14 +241,14 @@ describe('e2e upgrade', () => {
 
   it('exits 2 outside a project that lists e2e', async () => {
     project({ devDependencies: { vitest: '^5.0.0' } });
-    expect(await run()).toBe(2);
+    expect((await run()).exitCode).toBe(2);
     expect(written(stderrSpy)).toContain('no package.json from here up lists e2e as a dependency');
   });
 
   it('exits 3 when the registry cannot be reached, and asks the registry the environment names', async () => {
     project({ devDependencies: { e2e: '^0.20.0' } });
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
-    expect(await run(undefined, { env: { npm_config_registry: 'https://npm.example.com' } })).toBe(3);
+    expect((await run(undefined, { env: { npm_config_registry: 'https://npm.example.com' } })).exitCode).toBe(3);
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://npm.example.com/e2e');
     expect(written(stderrSpy)).toBe('e2e upgrade: could not reach the registry at https://npm.example.com/: fetch failed\n');
   });
@@ -246,16 +256,54 @@ describe('e2e upgrade', () => {
   it('exits 2 when the installation fails, and 130 when it is interrupted', async () => {
     project({ devDependencies: { e2e: '^0.20.0' } });
     spawnMock.mockReturnValue({ status: 1, signal: null });
-    expect(await run()).toBe(2);
+    expect((await run()).exitCode).toBe(2);
     expect(written(stderrSpy)).toContain('e2e upgrade: npm failed (exit 1); retry with npm install --save-dev e2e@^0.21.2');
     spawnMock.mockReturnValue({ status: null, signal: 'SIGINT' });
-    expect(await run()).toBe(130);
+    expect((await run()).exitCode).toBe(130);
+  });
+
+  it('names how each run ended for telemetry, with the facts it learned before that', async () => {
+    const outcome = async (target?: UpgradeTarget, overrides?: Partial<UpgradeOptions>) => {
+      const { result, exitCode, fromVersion, toVersion, moved, linked } = await run(target, overrides);
+      return { result, exitCode, fromVersion, toVersion, moved, linked };
+    };
+    project({ devDependencies: { e2e: '^0.20.0', '@e2e-dev/web': 'workspace:*' } }, { e2e: '0.20.0' });
+    expect(await outcome(undefined, { dryRun: true })).toEqual({ result: 'dry-run', exitCode: 0, fromVersion: '0.20.0', toVersion: '0.21.2', moved: 0, linked: 1 });
+    expect(await outcome({ kind: 'tag', tag: 'beta' })).toEqual({ result: 'unknown-target', exitCode: 2, fromVersion: '0.20.0', toVersion: null, moved: 0, linked: 1 });
+    spawnMock.mockReturnValue({ status: null, signal: 'SIGINT' });
+    expect(await outcome()).toMatchObject({ result: 'install-failed', exitCode: 130, moved: 0 });
+
+    project({ devDependencies: { e2e: '^0.21.2' } }, { e2e: '0.21.2' });
+    expect(await outcome()).toMatchObject({ result: 'up-to-date', exitCode: 0, fromVersion: '0.21.2', toVersion: '0.21.2' });
+    rmSync(path.join(dir, 'node_modules'), { recursive: true });
+    spawnMock.mockReturnValue({ status: 0, signal: null });
+    project({ devDependencies: { e2e: '^0.20.0', '@e2e-dev/web': '^0.15.0' } });
+    expect(await outcome({ kind: 'version', version: '0.18.0' })).toEqual({ result: 'upgraded', exitCode: 0, fromVersion: null, toVersion: '0.18.0', moved: 2, linked: 0 });
+    project({ devDependencies: { e2e: 'link:../e2e' } });
+    expect(await outcome()).toMatchObject({ result: 'linked', exitCode: 2, toVersion: null, linked: 1 });
+    project({ devDependencies: {} });
+    expect(await outcome()).toMatchObject({ result: 'no-project', exitCode: 2 });
+    writeFileSync(path.join(dir, 'package.json'), '{');
+    expect(await outcome()).toMatchObject({ result: 'invalid-project', exitCode: 2 });
+    project({ devDependencies: { e2e: '^0.20.0' } });
+    fetchMock.mockResolvedValue(new Response('', { status: 500 }));
+    expect(await outcome()).toMatchObject({ result: 'registry-failed', exitCode: 3 });
+  });
+
+  it('names a sibling with no release that fits as incompatible', async () => {
+    project({ devDependencies: { e2e: '^0.20.0', '@e2e-dev/web': '^0.15.0' } });
+    REGISTRY['e2e']!.versions['0.10.0'] = {};
+    try {
+      expect(await run({ kind: 'version', version: '0.10.0' })).toMatchObject({ result: 'incompatible', target: 'version', toVersion: '0.10.0' });
+    } finally {
+      delete REGISTRY['e2e']!.versions['0.10.0'];
+    }
   });
 
   it('points at init when the project holds a copy of the agent skill', async () => {
     project({ devDependencies: { e2e: '^0.20.0' } }, { e2e: '0.20.0' });
     mkdirSync(path.join(dir, '.agents', 'skills', 'e2e'), { recursive: true });
-    expect(await run()).toBe(0);
+    expect((await run()).exitCode).toBe(0);
     expect(written(stdoutSpy)).toContain('The agent skill in .agents/skills/e2e is the old version\'s; refresh it with npm exec -- e2e init');
   });
 });

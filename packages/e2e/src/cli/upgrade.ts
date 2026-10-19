@@ -15,6 +15,7 @@ import picocolors from 'picocolors';
 import { z } from 'zod';
 import { detectWorkspacePackageManager, execCommand, type PackageManager } from '../internal/package-manager.ts';
 import { compareVersions, formatVersion, parseVersion, satisfies } from '../internal/semver.ts';
+import type { UpgradeOutcome, UpgradeResult } from '../telemetry/events.ts';
 import { findInstalledSkillDirs } from './init/agent-skill.ts';
 import { describeManifestError, readPackage } from './init/package.ts';
 
@@ -91,46 +92,65 @@ interface Planned extends Declared {
   readonly request: string;
 }
 
-/** A failure that ends the command: what to print and the exit code. */
+/** A failure that ends the command: what to print, how telemetry names it, and the exit code. */
 class UpgradeError extends Error {
   constructor(
     message: string,
+    readonly result: UpgradeResult,
     readonly exitCode: number,
   ) {
     super(message);
   }
 }
 
+/** The outcome's facts, filled in as the command learns them. */
+type UpgradeFacts = { -readonly [Key in keyof Omit<UpgradeOutcome, 'result'>]: UpgradeOutcome[Key] };
+
 /**
- * Runs `e2e upgrade`. Exit 0 when the packages were installed, were already
- * at the target, or `--dry-run` printed the plan; 2 for a project, version,
- * or tag the command cannot act on and for a failed installation; 3 when the
- * registry did not answer; 130 when the installation was interrupted.
+ * Runs `e2e upgrade` and returns how it ended, for telemetry, with the exit
+ * code: 0 when the packages were installed, were already at the target, or
+ * `--dry-run` printed the plan; 2 for a project, version, or tag the command
+ * cannot act on and for a failed installation; 3 when the registry did not
+ * answer; 130 when the installation was interrupted.
  */
-export async function upgrade(options: UpgradeOptions): Promise<number> {
+export async function upgrade(options: UpgradeOptions): Promise<UpgradeOutcome & { readonly exitCode: number }> {
+  const facts: UpgradeFacts = {
+    target: options.target.kind === 'version' ? 'version' : options.target.tag,
+    fromVersion: null,
+    toVersion: null,
+    manager: null,
+    siblings: [],
+    moved: 0,
+    linked: 0,
+  };
   try {
-    return await upgradeOrThrow(options);
+    // Awaited first: the command fills `facts` in as it goes.
+    const ended = await upgradeOrThrow(options, facts);
+    return { ...facts, ...ended };
   } catch (cause) {
     if (!(cause instanceof UpgradeError)) throw cause;
     process.stderr.write(`e2e upgrade: ${cause.message}\n`);
-    return cause.exitCode;
+    return { ...facts, result: cause.result, exitCode: cause.exitCode };
   }
 }
 
-async function upgradeOrThrow(options: UpgradeOptions): Promise<number> {
+async function upgradeOrThrow(options: UpgradeOptions, facts: UpgradeFacts): Promise<{ result: UpgradeResult; exitCode: number }> {
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
   const out = (text: string): void => void process.stdout.write(`${text}\n`);
   const project = findProject(cwd);
   const { declared, linked } = declaredPackages(project.dir, project.manifest);
+  facts.linked = linked.length;
   const runner = declared.find((entry) => entry.name === RUNNER);
   if (runner === undefined) {
     const spec = linked.find((entry) => entry.name === RUNNER)?.spec;
     throw new UpgradeError(
       `e2e is "${spec}" in ${relative(cwd, project.manifestPath)}, not a registry version; change that spec yourself`,
+      'linked',
       2,
     );
   }
+  facts.fromVersion = runner.installed ?? null;
   for (const entry of linked) out(picocolors.dim(`Skipping ${entry.name}: "${entry.spec}" is not a registry version`));
 
   const registry = registryUrl(env);
@@ -139,25 +159,28 @@ async function upgradeOrThrow(options: UpgradeOptions): Promise<number> {
     await Promise.all(declared.map(async (entry) => [entry.name, await fetchPackument(registry, entry.name, fetchImpl)] as const)),
   );
   const target = resolveRunner(options.target, packuments.get(RUNNER));
+  facts.toVersion = target;
   const versions = resolveSiblings(options.target, target, declared, packuments, (name) => out(picocolors.dim(`Skipping ${name}: the registry has no such package`)));
   const plan = declared.flatMap((entry): Planned[] => {
     const version = versions.get(entry.name);
     return version === undefined ? [] : [{ ...entry, version, request: requestFor(entry.spec, version, options.target) }];
   });
+  facts.siblings = plan.filter((entry) => entry.name !== RUNNER).map((entry) => entry.name);
 
   const manager = detectWorkspacePackageManager(project.dir, env);
+  facts.manager = manager;
   const where = path.resolve(project.dir) === path.resolve(cwd) ? '' : ` in ${relative(cwd, project.dir)}`;
   const changing = plan.filter((entry) => entry.installed !== entry.version);
   if (changing.length === 0) {
     out(`Already up to date${where}: ${plan.map((entry) => `${entry.name} ${entry.version}`).join(', ')}`);
-    return 0;
+    return { result: 'up-to-date', exitCode: 0 };
   }
   out(`${options.dryRun === true ? 'Would upgrade' : 'Upgrading'}${where} with ${manager}:`);
   const width = Math.max(...plan.map((entry) => entry.name.length));
   for (const entry of plan) out(`  ${entry.name.padEnd(width)}  ${describeChange(entry)}`);
   const commands = installCommands(manager, changing, existsSync(path.join(project.dir, 'pnpm-workspace.yaml')));
   for (const args of commands) out(picocolors.dim(`$ ${manager} ${args.join(' ')}`));
-  if (options.dryRun === true) return 0;
+  if (options.dryRun === true) return { result: 'dry-run', exitCode: 0 };
 
   const spawn = options.spawn ?? spawnInstall;
   for (const args of commands) {
@@ -165,9 +188,10 @@ async function upgradeOrThrow(options: UpgradeOptions): Promise<number> {
     if (result.error !== undefined || result.status !== 0) {
       const reason = result.error?.message ?? `exit ${result.status ?? result.signal}`;
       process.stderr.write(`e2e upgrade: ${manager} failed (${reason}); retry with ${manager} ${args.join(' ')}\n`);
-      return result.signal === 'SIGINT' ? 130 : 2;
+      return { result: 'install-failed', exitCode: result.signal === 'SIGINT' ? 130 : 2 };
     }
   }
+  facts.moved = changing.length;
 
   out(`${picocolors.green('Upgraded')}${where}: ${changing.map((entry) => `${entry.name} ${entry.version}`).join(', ')}`);
   const runnerVersion = versions.get(RUNNER)!;
@@ -178,7 +202,7 @@ async function upgradeOrThrow(options: UpgradeOptions): Promise<number> {
   if (skillDirs.length > 0) {
     out(`The agent skill in ${skillDirs.map((dir) => `${dir}/e2e`).join(' and ')} is the old version's; refresh it with ${execCommand(manager, 'e2e init')}`);
   }
-  return 0;
+  return { result: 'upgraded', exitCode: 0 };
 }
 
 /** The nearest package.json from `cwd` up that declares `e2e`. */
@@ -190,13 +214,13 @@ function findProject(cwd: string): { dir: string; manifestPath: string; manifest
       try {
         ({ manifest } = readPackage(dir));
       } catch (cause) {
-        throw new UpgradeError(`${relative(cwd, manifestPath)} could not be read: ${describeManifestError(cause)}`, 2);
+        throw new UpgradeError(`${relative(cwd, manifestPath)} could not be read: ${describeManifestError(cause)}`, 'invalid-project', 2);
       }
       if (SECTIONS.some((section) => manifest[section]?.[RUNNER] !== undefined)) return { dir, manifestPath, manifest };
     }
     if (path.dirname(dir) === dir) break;
   }
-  throw new UpgradeError('no package.json from here up lists e2e as a dependency; run e2e init to set up a project', 2);
+  throw new UpgradeError('no package.json from here up lists e2e as a dependency; run e2e init to set up a project', 'no-project', 2);
 }
 
 /** `e2e` and the `@e2e-dev/*` packages the manifest installs, split by whether their spec names a registry version. */
@@ -247,31 +271,31 @@ async function fetchPackument(registry: string, name: string, fetchImpl: typeof 
       signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS),
     });
   } catch (cause) {
-    throw new UpgradeError(`could not reach the registry at ${registry}: ${cause instanceof Error ? cause.message : String(cause)}`, 3);
+    throw new UpgradeError(`could not reach the registry at ${registry}: ${cause instanceof Error ? cause.message : String(cause)}`, 'registry-failed', 3);
   }
   if (response.status === 404 && name !== RUNNER) return undefined;
-  if (!response.ok) throw new UpgradeError(`the registry at ${registry} answered ${response.status} for ${name}`, 3);
+  if (!response.ok) throw new UpgradeError(`the registry at ${registry} answered ${response.status} for ${name}`, 'registry-failed', 3);
   try {
     return packumentSchema.parse(await response.json());
   } catch {
-    throw new UpgradeError(`the registry at ${registry} sent metadata for ${name} that could not be read`, 3);
+    throw new UpgradeError(`the registry at ${registry} sent metadata for ${name} that could not be read`, 'registry-failed', 3);
   }
 }
 
 /** The `e2e` version the target names. */
 function resolveRunner(target: UpgradeTarget, packument: Packument | undefined): string {
-  if (packument === undefined) throw new UpgradeError('the registry has no e2e package', 3);
+  if (packument === undefined) throw new UpgradeError('the registry has no e2e package', 'registry-failed', 3);
   const tags = packument['dist-tags'];
   if (target.kind === 'tag') {
     const version = tags[target.tag];
     if (version === undefined) {
-      throw new UpgradeError(`e2e has no "${target.tag}" release; its dist-tags are ${Object.keys(tags).join(', ')}`, 2);
+      throw new UpgradeError(`e2e has no "${target.tag}" release; its dist-tags are ${Object.keys(tags).join(', ')}`, 'unknown-target', 2);
     }
     return version;
   }
   if (packument.versions[target.version] === undefined) {
     const latest = tags['latest'];
-    throw new UpgradeError(`e2e ${target.version} was never published${latest === undefined ? '' : `; the latest release is ${latest}`}`, 2);
+    throw new UpgradeError(`e2e ${target.version} was never published${latest === undefined ? '' : `; the latest release is ${latest}`}`, 'unknown-target', 2);
   }
   return target.version;
 }
@@ -339,6 +363,7 @@ function pickSibling(name: string, packument: Packument, target: UpgradeTarget, 
   const needs = latest === undefined ? undefined : packument.versions[latest]?.peerDependencies?.[RUNNER];
   throw new UpgradeError(
     `no ${name} release works with e2e ${chosen.get(RUNNER)}${latest !== undefined && needs !== undefined ? `; ${name} ${latest} needs e2e ${needs}` : ''}`,
+    'incompatible',
     2,
   );
 }

@@ -65,8 +65,9 @@ sends nothing.
 ## What is sent
 
 Each command sends one `e2e_cli_session` event. `run` and `explore` also
-send `e2e_run_completed`, `init` sends `e2e_init_completed`, and `mcp` sends
-one `e2e_mcp_session` per MCP session. `--help` and `--version` send
+send `e2e_run_completed`, `init` sends `e2e_init_completed`, `upgrade` sends
+`e2e_upgrade_completed`, and `mcp` sends one `e2e_mcp_session` per MCP
+session. `--help` and `--version` send
 nothing, on any command. `run()` from `e2e/runner` sends no session event,
 only one `e2e_run_completed` per run that returns a report.
 
@@ -118,6 +119,18 @@ own tools count together as `tool`, and any other name as `other`.
 | `yes`, `existing_config` | Whether `--yes` was given, and whether a config already existed, so no engine or gateway was asked |
 | `engine`, `gateway` | The ids of the engine and the model gateway chosen for a new config (`web`, `mobile`, `none`; `vercel`, `openrouter`, `openai-compatible`, `chatgpt`, `copilot`, `opencode-console`, `grok`, `none`), `null` when not asked. Never the endpoint typed for an OpenAI-compatible gateway |
 | `skill`, `mcp`, `install` | Whether the agent skill, the MCP registration, and the dependency install were chosen |
+
+</Accordion>
+<Accordion title="e2e_upgrade_completed, once per e2e upgrade">
+
+| Property | Value |
+| --- | --- |
+| `result` | `upgraded`, `up-to-date`, `dry-run`, `no-project`, `invalid-project`, `linked`, `unknown-target`, `incompatible`, `registry-failed`, or `install-failed` |
+| `target` | `version` for a named version, else the dist-tag: `latest`, `nightly`, `canary`, `beta`, or `other` |
+| `from_version`, `to_version`, `prerelease` | The `e2e` version installed before, the one the target resolved to, and whether that one is a prerelease. `null` when unknown |
+| `manager` | The package manager that installed: `npm`, `pnpm`, `yarn`, or `bun` |
+| `siblings` | The `@e2e-dev` packages the project lists, without the scope: `["web", "kernel"]` |
+| `packages_moved`, `packages_linked` | How many packages the install changed, and how many were left alone because a workspace, a path, or git provides them |
 
 </Accordion>
 <Accordion title="e2e_run_completed, once per e2e run, e2e explore, or completed run()">

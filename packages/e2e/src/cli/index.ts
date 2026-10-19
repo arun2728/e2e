@@ -19,7 +19,7 @@ import type { BuiltinReporter, RecordingMode } from '../types.ts';
 import { isRecordingMode, legacyTraceSpelling, RECORDING_MODES } from '../internal/recording-modes.ts';
 import { isCiMode } from '../config/resolve.ts';
 import { runsFromCheckout } from '../telemetry/checkout.ts';
-import { initCompletedEvent, runCompletedEvent, USAGE_ERROR_CODE } from '../telemetry/events.ts';
+import { initCompletedEvent, runCompletedEvent, upgradeCompletedEvent, USAGE_ERROR_CODE } from '../telemetry/events.ts';
 import { Telemetry } from '../telemetry/telemetry.ts';
 import { CACHE_DIR_DESCRIPTION, registerCacheCommand } from './cache.ts';
 import { docsLine, examples, helpSection, pc } from './help.ts';
@@ -896,10 +896,12 @@ function createProgram(version: string, telemetry: Telemetry, updateCheck: Updat
       ].join('\n'),
     )
     .action(async (target: UpgradeTarget | undefined, options: { dryRun?: boolean }) => {
-      process.exitCode = await upgrade({
+      const { exitCode, ...outcome } = await upgrade({
         target: target ?? { kind: 'tag', tag: 'latest' },
         ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
       });
+      telemetry.record(upgradeCompletedEvent(outcome));
+      process.exitCode = exitCode;
     });
 
   program

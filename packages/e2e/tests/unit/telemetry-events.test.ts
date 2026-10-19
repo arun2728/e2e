@@ -9,9 +9,11 @@ import {
   EVENT_INIT_COMPLETED,
   EVENT_MCP_SESSION,
   EVENT_RUN_COMPLETED,
+  EVENT_UPGRADE_COMPLETED,
   initCompletedEvent,
   mcpSessionEvent,
   runCompletedEvent,
+  upgradeCompletedEvent,
   type RunContext,
 } from '../../src/telemetry/events.ts';
 import type { StepEvent } from '../../src/run/steps.ts';
@@ -81,6 +83,38 @@ describe('telemetry events', () => {
         install: true,
       },
     });
+  });
+
+  it('the upgrade event carries the result, e2e versions, and sibling names inside the scope', () => {
+    const outcome = {
+      result: 'upgraded',
+      target: 'nightly',
+      fromVersion: '0.21.2',
+      toVersion: '0.21.3-nightly-20261019081103',
+      manager: 'pnpm',
+      siblings: ['@e2e-dev/web', '@e2e-dev/kernel'],
+      moved: 3,
+      linked: 1,
+    } as const;
+    expect(upgradeCompletedEvent(outcome)).toEqual({
+      name: EVENT_UPGRADE_COMPLETED,
+      properties: {
+        result: 'upgraded',
+        target: 'nightly',
+        from_version: '0.21.2',
+        to_version: '0.21.3-nightly-20261019081103',
+        prerelease: true,
+        manager: 'pnpm',
+        siblings: ['kernel', 'web'],
+        packages_moved: 3,
+        packages_linked: 1,
+      },
+    });
+    // A tag e2e does not publish, a version that is not one, and a name outside the scope fold.
+    expect(
+      upgradeCompletedEvent({ ...outcome, result: 'unknown-target', target: 'my-team/secret', fromVersion: 'workspace:*', toVersion: null, siblings: ['@acme/web'] }).properties,
+    ).toMatchObject({ target: 'other', from_version: null, to_version: null, prerelease: null, siblings: ['other'] });
+    expect(upgradeCompletedEvent({ ...outcome, target: 'version', toVersion: '0.21.2' }).properties).toMatchObject({ target: 'version', prerelease: false });
   });
 
   it("the run event is the report's numbers, with project vocabulary folded", () => {
