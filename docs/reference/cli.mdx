@@ -1015,8 +1015,9 @@ Release notes: https://github.com/tester-army/e2e/releases/tag/e2e%400.21.2
   never picked, and a prerelease only when `e2e` gets one. An integration
   follows the engine it plugs into.
 - **The package manager.** The one the project's lockfile or
-  `packageManager` field names. A workspace member uses its workspace
-  root's. A lockfile above a project that no workspace lists doesn't count.
+  `packageManager` field names, or pnpm at a pnpm workspace root. A
+  workspace member with neither uses its workspace root's. A lockfile above
+  a project that no workspace lists doesn't count.
 - **The install.** The new specs go into `package.json`, each in the
   section it was in, then one `install` resolves them together. pnpm gets
   `--no-frozen-lockfile`, and Yarn `YARN_ENABLE_IMMUTABLE_INSTALLS=false`,
@@ -1043,7 +1044,7 @@ Release notes: https://github.com/tester-army/e2e/releases/tag/e2e%400.21.2
 | --- | --- |
 | 0 | The packages were installed, were already at the target, or `--dry-run` printed the plan. |
 | 2 | A range, an unknown version or dist-tag, no `package.json` that lists `e2e`, a linked `e2e`, a sibling with no release that fits, or a failed install. |
-| 3 | The registry did not answer, or sent metadata the command could not read. |
+| 3 | A registry request failed or answered with an error status, or sent metadata the command could not read. |
 | 130 | Ctrl-C or SIGTERM during the install. `package.json` and the lockfile go back as they were. |
 
 #### `e2e feedback`

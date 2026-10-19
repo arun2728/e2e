@@ -51,6 +51,12 @@ describe('detectWorkspacePackageManager', () => {
     expect(detectWorkspacePackageManager(member, {})).toEqual({ manager: 'pnpm', root: dir });
   });
 
+  it('reads a pnpm workspace root with no lockfile yet as pnpm', () => {
+    writeFileSync(path.join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n');
+    writeFileSync(path.join(dir, 'package.json'), '{}');
+    expect(detectWorkspacePackageManager(dir, { npm_config_user_agent: 'npm/11.0.0' })).toEqual({ manager: 'pnpm', root: dir });
+  });
+
   it.each([
     ['an unindented block list', 'packages:\n- apps/*\n- "!apps/legacy"\n'],
     ['a flow list', "packages: ['apps/*', \"!apps/legacy\"] # every app\n"],

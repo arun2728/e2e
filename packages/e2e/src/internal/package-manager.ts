@@ -49,7 +49,8 @@ export function detectPackageManager(
 /**
  * The manager of the package in `dir`, which may be a member of a workspace
  * whose lockfile and `packageManager` field are at the workspace root: the
- * package's own field or lockfile, else those of the nearest workspace root
+ * package's own field or lockfile (or pnpm, for a pnpm workspace root that
+ * has neither yet), else those of the nearest workspace root
  * above whose package globs include it, else the manager that invoked the
  * current process, else npm. A lockfile above that belongs to no workspace
  * holding the package is another project's, and does not count. `root` is
@@ -61,7 +62,7 @@ export function detectWorkspacePackageManager(
   env: NodeJS.ProcessEnv = process.env,
 ): { readonly manager: PackageManager; readonly root: string } {
   const project = path.resolve(dir);
-  const own = managerAt(project);
+  const own = managerAt(project) ?? workspaceGlobs(project)?.manager;
   if (own !== undefined) return { manager: own, root: project };
   for (let current = path.dirname(project); ; current = path.dirname(current)) {
     const workspace = workspaceGlobs(current);

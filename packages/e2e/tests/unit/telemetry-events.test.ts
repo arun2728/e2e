@@ -88,7 +88,7 @@ describe('telemetry events', () => {
   it('the upgrade event carries the result, e2e versions, and sibling names inside the scope', () => {
     const outcome = {
       result: 'upgraded',
-      target: 'nightly',
+      target: { kind: 'tag', tag: 'nightly' },
       fromVersion: '0.21.2',
       toVersion: '0.21.3-nightly-20261019081103',
       manager: 'pnpm',
@@ -112,9 +112,11 @@ describe('telemetry events', () => {
     });
     // A tag e2e does not publish, a version that is not one, and a name outside the scope fold.
     expect(
-      upgradeCompletedEvent({ ...outcome, result: 'unknown-target', target: 'my-team/secret', fromVersion: 'workspace:*', toVersion: null, siblings: ['@acme/web'] }).properties,
+      upgradeCompletedEvent({ ...outcome, result: 'unknown-target', target: { kind: 'tag', tag: 'my-team/secret' }, fromVersion: 'workspace:*', toVersion: null, siblings: ['@acme/web'] }).properties,
     ).toMatchObject({ target: 'other', from_version: null, to_version: null, prerelease: null, siblings: ['other'] });
-    expect(upgradeCompletedEvent({ ...outcome, target: 'version', toVersion: '0.21.2' }).properties).toMatchObject({ target: 'version', prerelease: false });
+    expect(upgradeCompletedEvent({ ...outcome, target: { kind: 'version' }, toVersion: '0.21.2' }).properties).toMatchObject({ target: 'version', prerelease: false });
+    // A dist-tag spelled like the version sentinel is still a tag, and not one e2e publishes.
+    expect(upgradeCompletedEvent({ ...outcome, target: { kind: 'tag', tag: 'version' } }).properties).toMatchObject({ target: 'other' });
     // Build metadata after `+` is not a prerelease, hyphens and all.
     expect(upgradeCompletedEvent({ ...outcome, toVersion: '0.22.0+ci-build' }).properties).toMatchObject({ prerelease: false });
   });

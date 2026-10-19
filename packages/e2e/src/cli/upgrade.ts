@@ -115,7 +115,7 @@ type UpgradeFacts = { -readonly [Key in keyof Omit<UpgradeOutcome, 'result'>]: U
  */
 export async function upgrade(options: UpgradeOptions): Promise<UpgradeOutcome & { readonly exitCode: number }> {
   const facts: UpgradeFacts = {
-    target: options.target.kind === 'version' ? 'version' : options.target.tag,
+    target: options.target.kind === 'version' ? { kind: 'version' } : { kind: 'tag', tag: options.target.tag },
     fromVersion: null,
     toVersion: null,
     manager: null,

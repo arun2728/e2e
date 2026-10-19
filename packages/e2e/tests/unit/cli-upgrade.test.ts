@@ -122,7 +122,7 @@ describe('e2e upgrade', () => {
     expect(await run()).toEqual({
       exitCode: 0,
       result: 'upgraded',
-      target: 'latest',
+      target: { kind: 'tag', tag: 'latest' },
       fromVersion: '0.20.0',
       toVersion: '0.21.2',
       manager: 'npm',
@@ -418,7 +418,7 @@ describe('e2e upgrade', () => {
     project({ devDependencies: { e2e: '^0.20.0', '@e2e-dev/web': '^0.15.0' } });
     REGISTRY['e2e']!.versions['0.10.0'] = {};
     try {
-      expect(await run({ kind: 'version', version: '0.10.0' })).toMatchObject({ result: 'incompatible', target: 'version', toVersion: '0.10.0' });
+      expect(await run({ kind: 'version', version: '0.10.0' })).toMatchObject({ result: 'incompatible', target: { kind: 'version' }, toVersion: '0.10.0' });
     } finally {
       delete REGISTRY['e2e']!.versions['0.10.0'];
     }

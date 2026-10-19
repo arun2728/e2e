@@ -103,8 +103,8 @@ export type UpgradeResult =
 /** What `e2e upgrade` was asked for and did; each fact is null until the command learned it. */
 export interface UpgradeOutcome {
   readonly result: UpgradeResult;
-  /** `version` for a named version, else the dist-tag as typed. */
-  readonly target: string;
+  /** A named version, or the dist-tag as typed. */
+  readonly target: { readonly kind: 'version' } | { readonly kind: 'tag'; readonly tag: string };
   /** The e2e installed before, and the one the target resolved to. */
   readonly fromVersion: string | null;
   readonly toVersion: string | null;
@@ -172,7 +172,7 @@ export function upgradeCompletedEvent(outcome: UpgradeOutcome): TelemetryEvent {
     name: EVENT_UPGRADE_COMPLETED,
     properties: {
       result: outcome.result,
-      target: outcome.target === 'version' || UPGRADE_TAGS.has(outcome.target) ? outcome.target : 'other',
+      target: outcome.target.kind === 'version' ? 'version' : UPGRADE_TAGS.has(outcome.target.tag) ? outcome.target.tag : 'other',
       from_version: from,
       to_version: to,
       prerelease: to === null ? null : to.split('+')[0]!.includes('-'),

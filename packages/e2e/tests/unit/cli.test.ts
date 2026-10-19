@@ -52,7 +52,7 @@ function initOutcome(exitCode: number, overrides: Record<string, unknown> = {}) 
 
 /** What a mocked `upgrade` hands back: the exit code, and nothing learned. */
 function upgradeOutcome(exitCode: number) {
-  return { exitCode, result: exitCode === 0 ? 'upgraded' : 'install-failed', target: 'latest', fromVersion: null, toVersion: null, manager: null, siblings: [], moved: 0, linked: 0 };
+  return { exitCode, result: exitCode === 0 ? 'upgraded' : 'install-failed', target: { kind: 'tag', tag: 'latest' }, fromVersion: null, toVersion: null, manager: null, siblings: [], moved: 0, linked: 0 };
 }
 
 function lastRunOptions(): RunOptions {
@@ -1122,7 +1122,7 @@ describe('e2e telemetry', () => {
     upgradeMock.mockResolvedValue({
       exitCode: 2,
       result: 'unknown-target',
-      target: 'beta',
+      target: { kind: 'tag', tag: 'beta' },
       fromVersion: '0.20.0',
       toVersion: null,
       manager: 'npm',
